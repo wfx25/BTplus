@@ -20,6 +20,23 @@ const MOCK_UCB_COORDINATES = [
   [-80.4185, 37.2295], [-80.4205, 37.2285], [-80.4228, 37.2286]
 ];
 
+// 核心修复：精准计算实际路线的总公里数，彻底杜绝瞬移！
+function calculateTrueRouteLengthKm(coords) {
+  const toRad = Math.PI / 180;
+  let totalKm = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [lon1, lat1] = coords[i];
+    const [lon2, lat2] = coords[i + 1];
+    const dLat = (lat2 - lat1) * toRad;
+    const dLon = (lon2 - lon1) * toRad;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLon / 2) ** 2;
+    totalKm += 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  return totalKm;
+}
+
+const EXACT_ROUTE_LENGTH = calculateTrueRouteLengthKm(MOCK_UCB_COORDINATES);
+
 // === 模拟数据：两辆车运动 ===
 function createMockState() {
   const now = Date.now();
@@ -32,7 +49,15 @@ function createMockState() {
         generatedAt: now, dataAge: 24.8, freshness: "recent", predictionHorizonSeconds: 24.8,
         reported: { latitude: 37.2302, longitude: -80.4180 },
         predicted: { latitude: 37.2345, longitude: -80.4225 },
-        predictionState: { modelType: "route_constant_velocity", modelMode: "moving", startProgressKm: 0.65, routeLengthKm: 4.8, speedMetersPerSecond: 8.5, initialElapsedSeconds: 24.8, loop: true },
+        predictionState: {
+          modelType: "route_constant_velocity",
+          modelMode: "moving",
+          startProgressKm: 0.65,
+          routeLengthKm: EXACT_ROUTE_LENGTH, // 使用真实精准全长！
+          speedMetersPerSecond: 8.5,
+          initialElapsedSeconds: 24.8,
+          loop: true
+        },
         uncertainty: { p80Meters: 70, label: "P80 confidence window (BT data 24.8s stale)" }
       },
       {
@@ -40,7 +65,15 @@ function createMockState() {
         generatedAt: now, dataAge: 12.2, freshness: "fresh", predictionHorizonSeconds: 12.2,
         reported: { latitude: 37.2388, longitude: -80.4332 },
         predicted: { latitude: 37.2410, longitude: -80.4339 },
-        predictionState: { modelType: "route_constant_velocity", modelMode: "moving", startProgressKm: 2.2, routeLengthKm: 4.8, speedMetersPerSecond: 10.0, initialElapsedSeconds: 12.2, loop: true },
+        predictionState: {
+          modelType: "route_constant_velocity",
+          modelMode: "moving",
+          startProgressKm: 2.2,
+          routeLengthKm: EXACT_ROUTE_LENGTH, // 使用真实精准全长！
+          speedMetersPerSecond: 10.0,
+          initialElapsedSeconds: 12.2,
+          loop: true
+        },
         uncertainty: { p80Meters: 35, label: "P80 confidence window (BT data 12.2s fresh)" }
       }
     ],
