@@ -7,6 +7,7 @@ import {
   rangeCoordinates,
   visualPredictedPosition
 } from "./predictionPlayback.js";
+import ReplayControls from "./components/ReplayControls.jsx";
 
 // === 黑堡 BT 真实 UCB 路线高精度街道坐标 ===
 const MOCK_UCB_COORDINATES = [
@@ -109,10 +110,12 @@ export default function App() {
   const rafRef = useRef(null);
   const stateRef = useRef(null);
   const routeCacheRef = useRef(new Map());
+  const replaySeekVersionRef = useRef(null);
 
   const [state, setState] = useState(null);
   const [selectedBusId, setSelectedBusId] = useState(null);
   const [error, setError] = useState(null);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(true);
 
   selectedBusIdRef.current = selectedBusId;
 
@@ -193,13 +196,28 @@ export default function App() {
       }
 
       if (snapshot && layers) {
-        const now = Date.now();
+        const replay = snapshot.sourceMode === "replay" ? snapshot.replay : null;
+        const replayPaused = Boolean(replay && !replay.isPlaying);
+        const seekVersion = Number(replay?.seekVersion);
+        const seekedWhilePaused =
+          replayPaused &&
+          Number.isFinite(seekVersion) &&
+          replaySeekVersionRef.current != null &&
+          replaySeekVersionRef.current !== seekVersion;
+        if (Number.isFinite(seekVersion)) {
+          replaySeekVersionRef.current = seekVersion;
+        }
+        const animationNow = replayPaused
+          ? snapshot.generatedAt
+          : replay
+            ? snapshot.generatedAt + (Date.now() - snapshot.generatedAt) * (Number(replay.rate) || 1)
+            : Date.now();
         const buses = snapshot.buses || [];
         const seen = new Set();
         for (const bus of buses) {
           seen.add(bus.id);
           const routeCoordinates = routeCacheRef.current.get(bus.gtfsTripId);
-          const predicted = visualPredictedPosition(bus, routeCoordinates, now);
+          const predicted = visualPredictedPosition(bus, routeCoordinates, animationNow);
           let entry = markersRef.current.get(bus.id);
           if (!entry) {
             const reported = L.marker([bus.reported.latitude, bus.reported.longitude], { icon: reportedIcon, zIndexOffset: 200 }).addTo(layers.reported);
@@ -218,8 +236,13 @@ export default function App() {
               }
               entry.predicted.off("click"); entry.predicted.on("click", () => selectBus(bus));
               const current = predictedDisplayRef.current.get(bus.id) || { lat: predicted.latitude, lon: predicted.longitude };
-              current.lat = lerp(current.lat, predicted.latitude, 0.28);
-              current.lon = lerp(current.lon, predicted.longitude, 0.28);
+              if (seekedWhilePaused) {
+                current.lat = predicted.latitude;
+                current.lon = predicted.longitude;
+              } else if (!replayPaused) {
+                current.lat = lerp(current.lat, predicted.latitude, 0.28);
+                current.lon = lerp(current.lon, predicted.longitude, 0.28);
+              }
               predictedDisplayRef.current.set(bus.id, current);
               entry.predicted.setLatLng([current.lat, current.lon]);
             } else if (entry.predicted) {
@@ -247,7 +270,7 @@ export default function App() {
           let entry = markersRef.current.get(bus.id);
           if (!entry || !bus.uncertainty || !routeCoordinates || !ps) continue;
 
-          const progressKm = progressFromState(ps, bus.generatedAt, now);
+          const progressKm = progressFromState(ps, bus.generatedAt, animationNow);
           const range = rangeCoordinates(routeCoordinates, progressKm, bus.uncertainty.p80Meters, ps.routeLengthKm, ps.loop);
 
           if (range) {
@@ -317,7 +340,17 @@ export default function App() {
   return (
     <div className="app">
       <div ref={mapNodeRef} className="map" />
-      <aside className="panel">
+      <aside className={`panel ${mobilePanelOpen ? "panel-open" : ""}`}>
+        <button
+          className="drawer-toggle"
+          type="button"
+          aria-expanded={mobilePanelOpen}
+          onClick={() => setMobilePanelOpen((open) => !open)}
+        >
+          <span aria-hidden="true" className="drawer-grip" />
+          {mobilePanelOpen ? "Hide details" : "Show details"}
+        </button>
+        <div className="panel-content">
         <header>
           <div>
             <h1>BT+ Nowcast</h1>
@@ -330,6 +363,10 @@ export default function App() {
         </header>
 
         {error && <section><p className="note">Backend: {error}. Start with BT_RECORD=false.</p></section>}
+
+        {sourceMode === "replay" && (
+          <ReplayControls replay={state?.replay} stateTimestamp={state?.timestamp} />
+        )}
 
         <section>
           <h2>Selected bus</h2>
@@ -380,6 +417,7 @@ export default function App() {
           <p><span className="dot predicted" /> Predicted nowcast position</p>
           <p><span className="dot range" /> Uncertainty range (P80)</p>
         </section>
+        </div>
       </aside>
     </div>
   );
