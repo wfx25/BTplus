@@ -1,0 +1,122 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #101418;
+  color: #e8edf2;
+}
+
+#map {
+  position: absolute;
+  inset: 0 360px 0 0;
+}
+
+#panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 360px;
+  height: 100%;
+  overflow: auto;
+  padding: 16px 18px 24px;
+  background: #151b21;
+  border-left: 1px solid #2a343e;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9aa8b5;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: #8b98a5;
+  font-size: 12px;
+}
+
+section {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #24303a;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #334155;
+}
+
+.badge.live { background: #14532d; color: #bbf7d0; }
+.badge.replay { background: #1e3a5f; color: #bfdbfe; }
+
+.kv {
+  display: grid;
+  grid-template-columns: 118px 1fr;
+  gap: 6px 8px;
+  font-size: 13px;
+}
+
+.kv span:nth-child(odd) { color: #8b98a5; }
+
+.fresh-fresh { color: #86efac; }
+.fresh-recent { color: #fde68a; }
+.fresh-stale { color: #fca5a5; }
+
+.note, .legend p {
+  font-size: 12px;
+  color: #9aa8b5;
+  line-height: 1.45;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.dot.reported {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px #f8fafc;
+}
+
+.dot.predicted { background: #38bdf8; }
+
+.stat-row {
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+@media (max-width: 800px) {
+  #map { inset: 0 0 45% 0; }
+  #panel {
+    top: auto;
+    width: 100%;
+    height: 45%;
+    border-left: none;
+    border-top: 1px solid #2a343e;
+  }
+}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BT+ Nowcast</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="map"></div>
+  <aside id="panel">
+    <header>
+      <div>
+        <h1>BT+ Nowcast</h1>
+        <p class="subtitle">TRUST → PREDICT → VERIFY</p>
+      </div>
+      <div id="mode-badge" class="badge">…</div>
+    </header>
+
+    <section>
+      <h2>Selected bus</h2>
+      <div id="bus-details">Click a marker to inspect a bus.</div>
+    </section>
+
+    <section>
+      <h2>Validation</h2>
+      <div id="eval-stats">Waiting for paired observations…</div>
+    </section>
+
+    <section class="legend">
+      <h2>Legend</h2>
+      <p><span class="dot reported"></span> Raw BT report (never snapped)</p>
+      <p><span class="dot predicted"></span> Backend predicted position</p>
+      <p class="note">
+        Uncertainty is historical prediction error / approximate uncertainty,
+        not a formal geographic confidence interval.
+      </p>
+    </section>
+  </aside>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

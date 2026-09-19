@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "@turf/turf": "^7.4.0",
+    "csv-parse": "^7.0.2"
+  },
+  "scripts": {
+    "replay": "BT_RECORD=false BT_MODE=replay node backend.js",
+    "live": "BT_RECORD=false BT_MODE=live node backend.js",
+  "eval:offline": "BT_RECORD=false node evalOffline.js"
+  }
+}

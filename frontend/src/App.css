@@ -1,0 +1,147 @@
+* { box-sizing: border-box; }
+
+html, body, #root, .app {
+  margin: 0;
+  height: 100%;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #101418;
+  color: #e8edf2;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+.panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 320px;
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  padding: 16px 18px 18px;
+  background: rgba(21, 27, 33, 0.94);
+  border: 1px solid #2a343e;
+  border-radius: 8px;
+  z-index: 1000;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9aa8b5;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: #8b98a5;
+  font-size: 12px;
+}
+
+section {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #24303a;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #334155;
+}
+
+.badge.live { background: #14532d; color: #bbf7d0; }
+.badge.replay { background: #1e3a5f; color: #bfdbfe; }
+
+.kv {
+  display: grid;
+  grid-template-columns: 118px 1fr;
+  gap: 6px 8px;
+  font-size: 13px;
+}
+
+.kv span:nth-child(odd) { color: #8b98a5; }
+
+.fresh-fresh { color: #86efac; }
+.fresh-recent { color: #fde68a; }
+.fresh-stale { color: #fca5a5; }
+
+.note, .legend p {
+  font-size: 12px;
+  color: #9aa8b5;
+  line-height: 1.45;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.dot.reported {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px #f8fafc;
+}
+
+.dot.predicted { background: #f97316; }
+
+.dot.range {
+  background: rgba(251, 146, 60, 0.45);
+  box-shadow: inset 0 0 0 1px #ea580c;
+}
+
+.marker-reported {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #0f172a;
+  border-radius: 50%;
+  background: #f8fafc;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.marker-predicted {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #f97316;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px #9a3412;
+}
+
+.stat-row {
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+@media (max-width: 800px) {
+  .panel {
+    top: auto;
+    right: 8px;
+    left: 8px;
+    bottom: 8px;
+    width: auto;
+    max-height: 40%;
+  }
+}
