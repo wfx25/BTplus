@@ -7,6 +7,7 @@ import {
   rangeCoordinates,
   visualPredictedPosition
 } from "./predictionPlayback.js";
+import ReplayControls from "./components/ReplayControls.jsx";
 
 // === 黑堡 BT 真实 UCB 路线高精度街道坐标 ===
 const MOCK_UCB_COORDINATES = [
@@ -97,6 +98,10 @@ function freshnessClass(value) {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function formatMeters(value) { return value == null || Number.isNaN(value) ? "n/a" : `${value.toFixed(1)} m`; }
+function formatImprovement(value) {
+  if (value == null || Number.isNaN(value)) return "n/a";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)} m`;
+}
 
 export default function App() {
   const mapRef = useRef(null);
@@ -109,10 +114,12 @@ export default function App() {
   const rafRef = useRef(null);
   const stateRef = useRef(null);
   const routeCacheRef = useRef(new Map());
+  const replaySeekVersionRef = useRef(null);
 
   const [state, setState] = useState(null);
   const [selectedBusId, setSelectedBusId] = useState(null);
   const [error, setError] = useState(null);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(true);
 
   selectedBusIdRef.current = selectedBusId;
 
@@ -193,13 +200,28 @@ export default function App() {
       }
 
       if (snapshot && layers) {
-        const now = Date.now();
+        const replay = snapshot.sourceMode === "replay" ? snapshot.replay : null;
+        const replayPaused = Boolean(replay && !replay.isPlaying);
+        const seekVersion = Number(replay?.seekVersion);
+        const seekedWhilePaused =
+          replayPaused &&
+          Number.isFinite(seekVersion) &&
+          replaySeekVersionRef.current != null &&
+          replaySeekVersionRef.current !== seekVersion;
+        if (Number.isFinite(seekVersion)) {
+          replaySeekVersionRef.current = seekVersion;
+        }
+        const animationNow = replayPaused
+          ? snapshot.generatedAt
+          : replay
+            ? snapshot.generatedAt + (Date.now() - snapshot.generatedAt) * (Number(replay.rate) || 1)
+            : Date.now();
         const buses = snapshot.buses || [];
         const seen = new Set();
         for (const bus of buses) {
           seen.add(bus.id);
           const routeCoordinates = routeCacheRef.current.get(bus.gtfsTripId);
-          const predicted = visualPredictedPosition(bus, routeCoordinates, now);
+          const predicted = visualPredictedPosition(bus, routeCoordinates, animationNow);
           let entry = markersRef.current.get(bus.id);
           if (!entry) {
             const reported = L.marker([bus.reported.latitude, bus.reported.longitude], { icon: reportedIcon, zIndexOffset: 200 }).addTo(layers.reported);
@@ -218,8 +240,13 @@ export default function App() {
               }
               entry.predicted.off("click"); entry.predicted.on("click", () => selectBus(bus));
               const current = predictedDisplayRef.current.get(bus.id) || { lat: predicted.latitude, lon: predicted.longitude };
-              current.lat = lerp(current.lat, predicted.latitude, 0.28);
-              current.lon = lerp(current.lon, predicted.longitude, 0.28);
+              if (seekedWhilePaused) {
+                current.lat = predicted.latitude;
+                current.lon = predicted.longitude;
+              } else if (!replayPaused) {
+                current.lat = lerp(current.lat, predicted.latitude, 0.28);
+                current.lon = lerp(current.lon, predicted.longitude, 0.28);
+              }
               predictedDisplayRef.current.set(bus.id, current);
               entry.predicted.setLatLng([current.lat, current.lon]);
             } else if (entry.predicted) {
@@ -247,7 +274,7 @@ export default function App() {
           let entry = markersRef.current.get(bus.id);
           if (!entry || !bus.uncertainty || !routeCoordinates || !ps) continue;
 
-          const progressKm = progressFromState(ps, bus.generatedAt, now);
+          const progressKm = progressFromState(ps, bus.generatedAt, animationNow);
           const range = rangeCoordinates(routeCoordinates, progressKm, bus.uncertainty.p80Meters, ps.routeLengthKm, ps.loop);
 
           if (range) {
@@ -313,11 +340,22 @@ export default function App() {
   const sourceMode = state?.sourceMode || state?.mode;
   const selected = (state?.buses || []).find((bus) => bus.id === selectedBusId);
   const evaluation = state?.evaluation;
+  const model7Validation = state?.model7Validation;
 
   return (
     <div className="app">
       <div ref={mapNodeRef} className="map" />
-      <aside className="panel">
+      <aside className={`panel ${mobilePanelOpen ? "panel-open" : ""}`}>
+        <button
+          className="drawer-toggle"
+          type="button"
+          aria-expanded={mobilePanelOpen}
+          onClick={() => setMobilePanelOpen((open) => !open)}
+        >
+          <span aria-hidden="true" className="drawer-grip" />
+          {mobilePanelOpen ? "Hide details" : "Show details"}
+        </button>
+        <div className="panel-content">
         <header>
           <div>
             <h1>BT+ Nowcast</h1>
@@ -330,6 +368,10 @@ export default function App() {
         </header>
 
         {error && <section><p className="note">Backend: {error}. Start with BT_RECORD=false.</p></section>}
+
+        {sourceMode === "replay" && (
+          <ReplayControls replay={state?.replay} stateTimestamp={state?.timestamp} />
+        )}
 
         <section>
           <h2>Selected bus</h2>
@@ -362,6 +404,35 @@ export default function App() {
           ) : <p className="note">Waiting for paired observations…</p>}
         </section>
 
+        <section className="model7-validation">
+          <h2>CAS Model 7 Validation</h2>
+          {!model7Validation || !model7Validation.available ? (
+            <p className="note">Waiting for CAS pairs…</p>
+          ) : (
+            <>
+              <div className="stat-row"><strong>Completed CAS Pairs:</strong> {model7Validation.completedPairCount}</div>
+              <div className="stat-row"><strong>BT Stale Error:</strong> {formatMeters(model7Validation.staleMeanGeoErrorMeters)}</div>
+              <div className="stat-row"><strong>Model 1:</strong> {formatMeters(model7Validation.model1MeanGeoErrorMeters)}</div>
+              <div className="stat-row model7-result"><strong>Model 7 Safe:</strong> {formatMeters(model7Validation.model7SafeMeanGeoErrorMeters)}</div>
+              <div className="stat-row"><strong>Improvement vs Model 1:</strong> {formatImprovement(model7Validation.improvementVsModel1MeanGeoErrorMeters)}</div>
+              <div className="stat-row"><strong>Hold / Moving:</strong> {model7Validation.nHold} / {model7Validation.nMoving}</div>
+              {model7Validation.movingOnly?.completedPairCount > 0 && (
+                <div className="moving-only">
+                  <strong>Moving only ({model7Validation.movingOnly.completedPairCount}):</strong>
+                  <span> Model 1 {formatMeters(model7Validation.movingOnly.model1MeanGeoErrorMeters)}</span>
+                  <span> · Model 7 {formatMeters(model7Validation.movingOnly.model7SafeMeanGeoErrorMeters)}</span>
+                  <span> · Δ {formatImprovement(model7Validation.movingOnly.improvementVsModel1MeanGeoErrorMeters)}</span>
+                </div>
+              )}
+            </>
+          )}
+          {model7Validation?.mapUsesModel7Safe ? (
+            <p className="note model7-status">CAS vehicles on the map are using Model 7 Safe.</p>
+          ) : model7Validation ? (
+            <p className="note">Evaluation only: the map is currently using Model 1.</p>
+          ) : null}
+        </section>
+
         <section>
           <h2>Uncertainty calibration</h2>
           {(state?.uncertaintyCalibration || []).map((bucket) => {
@@ -380,6 +451,7 @@ export default function App() {
           <p><span className="dot predicted" /> Predicted nowcast position</p>
           <p><span className="dot range" /> Uncertainty range (P80)</p>
         </section>
+        </div>
       </aside>
     </div>
   );
