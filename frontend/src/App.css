@@ -145,3 +145,104 @@ section {
     max-height: 40%;
   }
 }
+/* =========================================
+   BT+ 视觉特效：Marker 动画与光环
+   ========================================= */
+
+/* 1. 静态的 Reported Marker (官方旧数据：黑白圆圈) */
+.marker-reported {
+  width: 14px;
+  height: 14px;
+  background-color: #ffffff;
+  border: 3px solid #1e293b;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(0,0,0,0.4);
+  transition: all 0.3s ease;
+}
+
+/* 2. 动态的 Predicted Marker (我们的预测：科技橙色 + 呼吸灯) */
+.marker-predicted {
+  width: 18px;
+  height: 18px;
+  background-color: #ea580c;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(234, 88, 12, 0.8);
+  position: relative;
+}
+
+/* 3. 雷达脉冲扩散动画 (Pulse Effect) */
+.marker-predicted::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  background-color: #ea580c;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  animation: radar-pulse 2s infinite ease-out;
+}
+
+@keyframes radar-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3.5);
+    opacity: 0;
+  }
+}
+/* 1. 数据新鲜度 Badge (红绿灯) */
+.fresh-fresh, .fresh-recent, .fresh-stale {
+  width: max-content; /* 加上这句：让背景紧贴着文字，不再被拉长 */
+}
+
+.fresh-fresh {
+  color: #22c55e;
+  font-weight: 700;
+  background: rgba(34, 197, 94, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.fresh-recent {
+  color: #eab308;
+  font-weight: 700;
+  background: rgba(234, 179, 8, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.fresh-stale {
+  color: #ef4444;
+  font-weight: 700;
+  background: rgba(239, 68, 68, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+  animation: flash-red 1.5s infinite;
+}
+
+@keyframes flash-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 2. 验证面板的战绩高亮 */
+.stat-row strong {
+  color: #94a3b8;
+  display: inline-block;
+  width: 150px;
+}
+
+/* 修复绿框：直接强制选中第四行 */
+section:nth-of-type(3) .stat-row:nth-of-type(4) {
+  background: rgba(34, 197, 94, 0.1);
+  padding: 6px;
+  border-radius: 6px;
+  border-left: 4px solid #22c55e;
+  margin: 8px 0;
+}
