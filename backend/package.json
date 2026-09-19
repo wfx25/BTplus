@@ -6,6 +6,8 @@
   "scripts": {
     "replay": "BT_RECORD=false BT_MODE=replay node backend.js",
     "live": "BT_RECORD=false BT_MODE=live node backend.js",
-  "eval:offline": "BT_RECORD=false node evalOffline.js"
+    "eval:offline": "BT_RECORD=false node evalOffline.js",
+    "test:model7parity": "node model7/testParity.js",
+    "replay:model7validate": "BT_RECORD=false node model7/replayValidate.js"
   }
 }

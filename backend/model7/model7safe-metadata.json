@@ -1,0 +1,59 @@
+{
+  "artifactId": "cas-model7safe-2026-09-19",
+  "createdAtUtc": "2026-09-19T12:53:22Z",
+  "sourceDataset": "friday-peak.jsonl (via output/cas_matched_observations.csv and cas_model7a_cases.csv)",
+  "totalValidTrainingPairs": 1394,
+  "nMovingUsedToFitHgb": 722,
+  "nHoldNotUsedInHgb": 672,
+  "target": "signed actual route displacement in (-L/2, L/2] metres minus Model 1 wrap-positive forward displacement metres",
+  "featureOrder": [
+    "currentSpeed",
+    "horizonSeconds",
+    "isBusAtStop",
+    "progressSin",
+    "progressCos",
+    "prevSpeed1",
+    "prevSpeed2",
+    "prevSpeed3",
+    "dtPrev1",
+    "dtPrev2",
+    "dtPrev3",
+    "speedDelta1",
+    "speedDelta2",
+    "recentSpeedSlope",
+    "previousRealizedRouteSpeed",
+    "distanceToNextScheduledStopMeters",
+    "distanceFromPreviousScheduledStopMeters"
+  ],
+  "hyperparameters": {
+    "max_iter": 100,
+    "max_leaf_nodes": 11,
+    "learning_rate": 0.08,
+    "min_samples_leaf": 15,
+    "l2_regularization": 1.0,
+    "random_state": 0
+  },
+  "correctionScale": 0.5,
+  "residualClamp": {
+    "p5": -59.998594582367915,
+    "p95": 49.21645139468542
+  },
+  "routeAssumptions": {
+    "casLoopKm": 6.890037491700106,
+    "trips": "unique (busId, gtfsTripId) passes; 11 Friday CAS passes"
+  },
+  "developmentStatus": {
+    "fridayIsDevelopmentData": true,
+    "notAnUntouchedFinalTestSet": true,
+    "validation": "11-pass leave-one-gtfsTripId-out during 7A / 7A.1",
+    "model7aMeanGeoM": 14.38,
+    "model1MeanGeoM": 16.87,
+    "safeLambda05MeanGeoM": 14.82,
+    "safeLambda05P80GeoM": 26.32,
+    "model1P80GeoM": 30.1,
+    "catastrophicGe20Reduced": "32 to 1 in development CV with lambda=0.5",
+    "arbitraryStaleAgeValidated": false
+  },
+  "baselinePrediction": -2.704991226550981,
+  "nIterationsFitted": 100
+}
