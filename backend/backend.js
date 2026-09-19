@@ -15,8 +15,13 @@ const {
     getUpcomingTurnInfo,
     getRouteGeometry,
     isLoopTrip,
-    getRouteLengthKm
+    getRouteLengthKm,
+    isModel7EligibleTrip
 } = require("./gtfs");
+const {
+    createModel7Runtime
+} = require("./model7/predictor");
+const { buildValidationPayload } = require("./model7/validationStats");
 const busStore = new Map();
 const evaluatedVersions = new Map();
 const predictionHistory = [];
@@ -24,6 +29,31 @@ const PREDICTION_HISTORY_LIMIT = 2000;
 const RECORDING_FILE =
     process.env.BT_RECORD_FILE || "./recordings/session.jsonl";
 const SHOULD_RECORD = process.env.BT_RECORD === "true";
+const BT_PREDICTOR_RAW =
+    (process.env.BT_PREDICTOR || "model1").toLowerCase();
+const BT_PREDICTOR =
+    BT_PREDICTOR_RAW === "model7safe" ? "model7safe" : "model1";
+const model7Runtime = createModel7Runtime();
+const validationPairs = [];
+let sessionStartMs = null;
+
+if (
+    SHOULD_RECORD &&
+    path.basename(RECORDING_FILE) === "friday-peak.jsonl"
+) {
+    throw new Error(
+        "Refusing to write BT_RECORD_FILE=friday-peak.jsonl. " +
+        "Choose a new recordings/<day>.jsonl filename."
+    );
+}
+if (
+    BT_PREDICTOR_RAW !== "model1" &&
+    BT_PREDICTOR_RAW !== "model7safe"
+) {
+    console.warn(
+        `Unknown BT_PREDICTOR=${BT_PREDICTOR_RAW}; using model1`
+    );
+}
 
 let replayCurrentTime = null;
 const REPLAY_FILE =
@@ -141,77 +171,90 @@ function broadcastSse(state) {
 
 function ingestBusObservations(buses) {
     latestBuses = buses;
+    if (sessionStartMs == null && buses.length > 0) {
+        sessionStartMs = getCurrentTime();
+    }
     updateBusStore(buses);
 
     for (const bus of buses) {
         const record = busStore.get(bus.id);
 
-        if (!record || !record.previous) {
-            continue;
-        }
-
-        if (record.current.version !== bus.version) {
-            continue;
-        }
         if (
-            evaluatedVersions.get(bus.id)
-            === record.current.version
+            record &&
+            record.previous &&
+            record.current.version === bus.version &&
+            evaluatedVersions.get(bus.id) !== record.current.version
         ) {
-            continue;
-        }
+            const evaluation =
+                evaluatePrediction(
+                    record.previous,
+                    record.current
+                );
 
-        const evaluation =
-            evaluatePrediction(
-                record.previous,
-                record.current
-            );
+            if (!evaluation) {
+                if (
+                    record.previous.gtfsTripId !==
+                    record.current.gtfsTripId
+                ) {
+                    evaluatedVersions.set(
+                        bus.id,
+                        record.current.version
+                    );
+                }
+            } else {
+                predictionHistory.push(evaluation);
+                if (predictionHistory.length > PREDICTION_HISTORY_LIMIT) {
+                    predictionHistory.splice(
+                        0,
+                        predictionHistory.length - PREDICTION_HISTORY_LIMIT
+                    );
+                }
+                validationPairs.push({
+                    busId: evaluation.busId,
+                    gtfsTripId: record.current.gtfsTripId,
+                    deltaTimeSeconds: evaluation.deltaTimeSeconds,
+                    baselineErrorMeters: evaluation.baselineErrorMeters,
+                    model1ErrorMeters: evaluation.motionPredictionErrorMeters,
+                    model7ErrorMeters: evaluation.model7PredictionErrorMeters,
+                    model7FallbackUsed: evaluation.model7FallbackUsed,
+                    model7FallbackReason: evaluation.model7FallbackReason,
+                    model7Eligible: evaluation.model7Eligible === true,
+                    model7HgbApplied: evaluation.model7HgbApplied === true,
+                    model7AppliedCorrectionMeters:
+                        evaluation.model7AppliedCorrectionMeters,
+                    modelMode: evaluation.modelMode,
+                    previousSpeed: evaluation.previousSpeed
+                });
 
-        if (!evaluation) {
-            if (
-                record.previous.gtfsTripId !==
-                record.current.gtfsTripId
-            ) {
                 evaluatedVersions.set(
                     bus.id,
                     record.current.version
                 );
+
+                const oracleText =
+                    evaluation.oraclePredictionErrorMeters == null
+                        ? "n/a"
+                        : `${evaluation.oraclePredictionErrorMeters.toFixed(1)}m`;
+                const cvText =
+                    evaluation.constantPredictionErrorMeters == null
+                        ? "n/a"
+                        : `${evaluation.constantPredictionErrorMeters.toFixed(1)}m`;
+
+                console.log(
+                    `Bus ${evaluation.busId} | ` +
+                    `${evaluation.transitionType} | ` +
+                    `${evaluation.modelMode} | ` +
+                    `Δt ${evaluation.deltaTimeSeconds.toFixed(1)}s | ` +
+                    `Speed ${evaluation.previousSpeed.toFixed(1)}→${evaluation.currentSpeed.toFixed(1)} | ` +
+                    `Baseline ${evaluation.baselineErrorMeters.toFixed(1)}m | ` +
+                    `CV ${cvText} | ` +
+                    `Motion ${evaluation.motionPredictionErrorMeters.toFixed(1)}m | ` +
+                    `Oracle ${oracleText}`
+                );
             }
-            continue;
         }
 
-        predictionHistory.push(evaluation);
-        if (predictionHistory.length > PREDICTION_HISTORY_LIMIT) {
-            predictionHistory.splice(
-                0,
-                predictionHistory.length - PREDICTION_HISTORY_LIMIT
-            );
-        }
-
-        evaluatedVersions.set(
-            bus.id,
-            record.current.version
-        );
-
-        const oracleText =
-            evaluation.oraclePredictionErrorMeters == null
-                ? "n/a"
-                : `${evaluation.oraclePredictionErrorMeters.toFixed(1)}m`;
-        const cvText =
-            evaluation.constantPredictionErrorMeters == null
-                ? "n/a"
-                : `${evaluation.constantPredictionErrorMeters.toFixed(1)}m`;
-
-        console.log(
-            `Bus ${evaluation.busId} | ` +
-            `${evaluation.transitionType} | ` +
-            `${evaluation.modelMode} | ` +
-            `Δt ${evaluation.deltaTimeSeconds.toFixed(1)}s | ` +
-            `Speed ${evaluation.previousSpeed.toFixed(1)}→${evaluation.currentSpeed.toFixed(1)} | ` +
-            `Baseline ${evaluation.baselineErrorMeters.toFixed(1)}m | ` +
-            `CV ${cvText} | ` +
-            `Motion ${evaluation.motionPredictionErrorMeters.toFixed(1)}m | ` +
-            `Oracle ${oracleText}`
-        );
+        model7Runtime.recordBus(bus);
     }
 }
 
@@ -250,6 +293,9 @@ function replayTick() {
         busStore.clear();
         evaluatedVersions.clear();
         lastObservationFingerprint = "";
+        model7Runtime.resetAll();
+        validationPairs.length = 0;
+        sessionStartMs = null;
         replayActiveIndex = 0;
         replayWallAnchor = Date.now();
         replayTimeAnchor = replaySnapshots[0].recordedAt;
@@ -588,6 +634,26 @@ function evaluatePrediction(previous, current) {
             { units: "kilometers" }
         ) * 1000;
 
+    const model7Result = model7Runtime.predictSafe(
+        previous,
+        deltaTimeSeconds,
+        { trackStats: false }
+    );
+    let model7ErrorMeters = null;
+    const model7Prediction = model7Result.prediction || motionPrediction;
+    if (model7Prediction) {
+        const model7Point = turf.point([
+            model7Prediction.longitude,
+            model7Prediction.latitude
+        ]);
+        model7ErrorMeters =
+            turf.distance(
+                model7Point,
+                actualPoint,
+                { units: "kilometers" }
+            ) * 1000;
+    }
+
     let constantPredictionErrorMeters = null;
     if (constantPrediction) {
         const constantPredictedPoint =
@@ -632,6 +698,17 @@ function evaluatePrediction(previous, current) {
         motionPredictionErrorMeters,
         oraclePredictionErrorMeters,
         oracleSpeed: oraclePrediction ? oracleSpeed : null,
+
+        model7PredictionErrorMeters:
+            model7ErrorMeters,
+        model7FallbackUsed:
+            model7Result ? model7Result.fallbackUsed : true,
+        model7FallbackReason:
+            model7Result ? model7Result.fallbackReason : "unavailable",
+        model7Eligible: isModel7EligibleTrip(previous.gtfsTripId),
+        model7HgbApplied: model7Result ? model7Result.hgbApplied === true : false,
+        model7AppliedCorrectionMeters:
+            model7Result ? model7Result.appliedCorrectionMeters : 0,
 
         constantImprovementMeters:
             constantPredictionErrorMeters == null
@@ -796,15 +873,67 @@ function summarizeNextStop(stopInfo) {
     };
 }
 
+function productionPredict(bus, dataAgeSeconds) {
+    const model1 = predictBusAfterSecondsMotionAware(
+        bus,
+        dataAgeSeconds
+    );
+
+    if (BT_PREDICTOR !== "model7safe") {
+        return {
+            prediction: model1,
+            fallbackUsed: false,
+            fallbackReason: null,
+            holdSkipHgb: bus.speed <= 1,
+            rawMlResidualMeters: null,
+            clampedMlResidualMeters: null,
+            appliedCorrectionMeters: 0,
+            correctionScale: 0.5,
+            startProgressKm: model1
+                ? model1.snappedProgressKm
+                : null,
+            mlModelType: null
+        };
+    }
+
+    const model7 = model7Runtime.predictSafe(bus, dataAgeSeconds);
+    if (model7.fallbackUsed || !model7.prediction) {
+        return {
+            prediction: model1,
+            fallbackUsed: true,
+            fallbackReason: model7.fallbackReason || "model7_unavailable",
+            holdSkipHgb: false,
+            rawMlResidualMeters: model7.rawMlResidualMeters,
+            clampedMlResidualMeters: model7.clampedMlResidualMeters,
+            appliedCorrectionMeters: 0,
+            correctionScale: 0.5,
+            startProgressKm: model1
+                ? model1.snappedProgressKm
+                : null,
+            mlModelType: "route_hgb_residual_safe"
+        };
+    }
+
+    return {
+        prediction: model7.prediction,
+        fallbackUsed: false,
+        fallbackReason: null,
+        holdSkipHgb: model7.holdSkipHgb,
+        rawMlResidualMeters: model7.rawMlResidualMeters,
+        clampedMlResidualMeters: model7.clampedMlResidualMeters,
+        appliedCorrectionMeters: model7.appliedCorrectionMeters,
+        correctionScale: model7.correctionScale,
+        startProgressKm: model7.startProgressKm,
+        mlModelType: "route_hgb_residual_safe"
+    };
+}
+
 function buildBusPayload(bus) {
     const dataAgeSeconds =
         (getCurrentTime() - bus.version) / 1000;
 
-    const prediction =
-        predictBusAfterSecondsMotionAware(
-            bus,
-            dataAgeSeconds
-        );
+    const produced = productionPredict(bus, dataAgeSeconds);
+    const prediction = produced.prediction;
 
     const directedProgress =
         getDirectedRouteProgress(
@@ -874,12 +1003,24 @@ function buildBusPayload(bus) {
             modelMode:
                 prediction?.modelMode ||
                 (bus.speed <= 1 ? "hold" : "moving"),
-            startProgressKm: directedProgress?.progressKm ?? null,
+            startProgressKm:
+                produced.startProgressKm ??
+                directedProgress?.progressKm ??
+                null,
             startTimestamp: Date.now(),
             initialElapsedSeconds: dataAgeSeconds,
             speedMetersPerSecond: bus.speed,
             routeLengthKm: getRouteLengthKm(bus.gtfsTripId),
-            loop: isLoopTrip(bus.gtfsTripId)
+            loop: isLoopTrip(bus.gtfsTripId),
+            mlModelType: produced.mlModelType,
+            baseModel: "route_constant_velocity",
+            rawMlResidualMeters: produced.rawMlResidualMeters,
+            clampedMlResidualMeters: produced.clampedMlResidualMeters,
+            appliedCorrectionMeters: produced.appliedCorrectionMeters,
+            correctionScale: produced.correctionScale,
+            fallbackUsed: produced.fallbackUsed,
+            fallbackReason: produced.fallbackReason,
+            holdSkipHgb: produced.holdSkipHgb
         },
         speed: bus.speed,
         direction: bus.direction,
@@ -1192,6 +1333,17 @@ function startHttpServer() {
             return;
         }
 
+        if (requestUrl.pathname === "/api/validation") {
+            sendJson(res, 200, buildValidationPayload({
+                sessionStartMs,
+                computedAtMs: Date.now(),
+                predictorConfigured: BT_PREDICTOR,
+                pairs: validationPairs,
+                predictorStats: model7Runtime.stats()
+            }));
+            return;
+        }
+
         if (requestUrl.pathname === "/api/route") {
             const tripId = requestUrl.searchParams.get("tripId");
             const coordinates = tripId
@@ -1210,6 +1362,7 @@ function startHttpServer() {
     server.listen(PORT, () => {
         console.log(
             `BT+ server ${BT_MODE} on http://localhost:${PORT}` +
+            ` | predictor=${BT_PREDICTOR}` +
             ` | recording=${SHOULD_RECORD}`
         );
     });
@@ -1655,7 +1808,7 @@ async function update() {
         } else {
             const buses = await getNormalizedBuses();
             ingestBusObservations(buses);
-            publishState();
+            publishState(BT_PREDICTOR === "model7safe");
         }
 
         if (latestState) {
@@ -1668,7 +1821,7 @@ async function update() {
 }
 
 console.log(
-    `Mode=${BT_MODE} RECORD=${SHOULD_RECORD}` +
+    `Mode=${BT_MODE} predictor=${BT_PREDICTOR} RECORD=${SHOULD_RECORD}` +
     (SHOULD_RECORD ? ` file=${RECORDING_FILE}` : "") +
     ` replay=${REPLAY_FILE}`
 );

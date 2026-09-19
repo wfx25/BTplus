@@ -1,0 +1,217 @@
+{
+  "artifactId": "cas-model7safe-2026-09-19",
+  "sourceCode": {
+    "featureOrder": "inspect/eval-model7a.py FEATURE_COLS",
+    "featureConstruction": "inspect/build-model7a-cases.js",
+    "stopHelpers": "backend-reference/gtfs.js getNextStopInfo / getTripStops (via inspect/load-production-gtfs.js)"
+  },
+  "missingValueEncoding": "JSON null / IEEE NaN. HistGradientBoosting native missing routing; no imputed fill at inference.",
+  "historyBreaks": {
+    "sameTripOnly": true,
+    "dtNonPositive": "break history chain",
+    "dtGreaterThan60s": "break history chain (recorder gap)",
+    "knownSnapFlipPairs": [
+      "6411|050812f3-95ea-4489-a561-bc4c5783d1e7|1789736116000|1789736138000",
+      "6411|050812f3-95ea-4489-a561-bc4c5783d1e7|1789736138000|1789736146000",
+      "6412|5ab96aad-116d-4448-91d9-12e0e6789dc7|1789740635000|1789740648000",
+      "6412|5ab96aad-116d-4448-91d9-12e0e6789dc7|1789740648000|1789740670000"
+    ],
+    "backwardJump": "if rawDelta < -0.3 km and not a terminus wrap (rawDelta < -0.5 and wrapPositive(rawDelta,L) < 0.8 km), break chain"
+  },
+  "features": [
+    {
+      "index": 0,
+      "name": "currentSpeed",
+      "units": "m/s",
+      "formula": "reported AVL speed of the current unique observation",
+      "requiredObservations": [
+        "current"
+      ],
+      "includesCurrent": true,
+      "historyDepth": 0,
+      "missing": "never; required"
+    },
+    {
+      "index": 1,
+      "name": "horizonSeconds",
+      "units": "s",
+      "offlineTrainingFormula": "(nextUniqueObservation.version - current.version) / 1000",
+      "liveInferenceFormula": "(wallClockNowMs - current.version) / 1000",
+      "forbiddenLiveMeaning": "MUST NOT be time until the next BT observation. That would leak the future.",
+      "includesCurrent": true,
+      "historyDepth": 0,
+      "missing": "never; required",
+      "trainingVsRuntimeWarning": "Offline 7A trained on observed pair intervals (median ~10 s, range 1-56 s). Live queries can request arbitrary dataAge. Arbitrary-age performance is NOT validated."
+    },
+    {
+      "index": 2,
+      "name": "isBusAtStop",
+      "units": "indicator 0/1",
+      "formula": "1 if current.isBusAtStop else 0",
+      "includesCurrent": true,
+      "historyDepth": 0,
+      "missing": "never; encoded 0/1"
+    },
+    {
+      "index": 3,
+      "name": "progressSin",
+      "units": "dimensionless",
+      "formula": "sin(2 * pi * current.routeProgressKm / routeLengthKm)",
+      "matches7A": true,
+      "includesCurrent": true,
+      "historyDepth": 0,
+      "missing": "never"
+    },
+    {
+      "index": 4,
+      "name": "progressCos",
+      "units": "dimensionless",
+      "formula": "cos(2 * pi * current.routeProgressKm / routeLengthKm)",
+      "matches7A": true,
+      "includesCurrent": true,
+      "historyDepth": 0,
+      "missing": "never"
+    },
+    {
+      "index": 5,
+      "name": "prevSpeed1",
+      "units": "m/s",
+      "formula": "reported speed of the immediately previous usable unique same-trip observation",
+      "requiredObservations": [
+        "current-1"
+      ],
+      "includesCurrent": false,
+      "historyDepth": 1,
+      "missing": "NaN if no previous unique obs or history link broken",
+      "resetBreaks": "see historyBreaks; after a break, prevSpeed2/3 are also missing"
+    },
+    {
+      "index": 6,
+      "name": "prevSpeed2",
+      "units": "m/s",
+      "formula": "speed of unique obs two steps back, only if both links (current-2\u2192current-1 and current-1\u2192current) are usable",
+      "includesCurrent": false,
+      "historyDepth": 2,
+      "missing": "NaN if chain shorter than 2 usable links"
+    },
+    {
+      "index": 7,
+      "name": "prevSpeed3",
+      "units": "m/s",
+      "formula": "speed of unique obs three steps back, only if all three links are usable",
+      "includesCurrent": false,
+      "historyDepth": 3,
+      "missing": "NaN if chain shorter than 3 usable links"
+    },
+    {
+      "index": 8,
+      "name": "dtPrev1",
+      "units": "s",
+      "formula": "(current.version - prev1.version) / 1000 even if the link is later rejected; if rejected, prevSpeed1 is NaN and the chain stops. If no previous obs, NaN.",
+      "includesCurrent": true,
+      "historyDepth": 1,
+      "missing": "NaN if no previous unique obs exists"
+    },
+    {
+      "index": 9,
+      "name": "dtPrev2",
+      "units": "s",
+      "formula": "(prev1.version - prev2.version) / 1000 under the same chain rules",
+      "includesCurrent": false,
+      "historyDepth": 2,
+      "missing": "NaN if chain does not reach prev2"
+    },
+    {
+      "index": 10,
+      "name": "dtPrev3",
+      "units": "s",
+      "formula": "(prev2.version - prev3.version) / 1000 under the same chain rules",
+      "includesCurrent": false,
+      "historyDepth": 3,
+      "missing": "NaN if chain does not reach prev3"
+    },
+    {
+      "index": 11,
+      "name": "speedDelta1",
+      "units": "m/s",
+      "formula": "currentSpeed - prevSpeed1",
+      "includesCurrent": true,
+      "historyDepth": 1,
+      "missing": "NaN if prevSpeed1 is missing"
+    },
+    {
+      "index": 12,
+      "name": "speedDelta2",
+      "units": "m/s",
+      "formula": "prevSpeed1 - prevSpeed2",
+      "includesCurrent": false,
+      "historyDepth": 2,
+      "missing": "NaN if prevSpeed1 or prevSpeed2 is missing"
+    },
+    {
+      "index": 13,
+      "name": "recentSpeedSlope",
+      "units": "m/s^2",
+      "observations": "Current unique obs plus up to 3 previous unique same-trip obs, walking backward while usableHistoryLink succeeds. If the first (current-1) link fails, slope is missing. If a later link fails after at least one good previous point, slope is computed on the prefix that succeeded.",
+      "timeCoordinate": "t_current = 0. Each previous obs has t = -sum of usable dts along the chain (negative elapsed historical time).",
+      "ols": "Ordinary least squares slope of speed vs t: slope = sum((t_i - mean_t) * (v_i - mean_v)) / sum((t_i - mean_t)^2). If denominator <= 1e-9 or fewer than 2 points, missing.",
+      "includesCurrent": true,
+      "historyDepth": "0-3 previous",
+      "missing": "NaN if <2 points (typically no usable previous obs)"
+    },
+    {
+      "index": 14,
+      "name": "previousRealizedRouteSpeed",
+      "units": "m/s",
+      "twoObservations": "previous usable unique obs (hist[0] = current-1) and current",
+      "signedDistance": "dKm = wrapToSigned(current.routeProgressKm - prev1.routeProgressKm, L) where wrapToSigned maps to (-L/2, L/2]. Multiply by 1000 for metres.",
+      "dt": "(current.version - prev1.version) / 1000, requiring dt > 0 and a usable link",
+      "formula": "previousRealizedRouteSpeed = (dKm * 1000) / dt",
+      "wrap": "loop wrap that is a small forward step across the terminus is allowed by usableHistoryLink",
+      "backwardJumpsSnapFlips": "unusable links yield NaN; do not use wrap-positive full-lap distance",
+      "tripChanges": "history is per busId|gtfsTripId; a new trip has no previous same-trip obs",
+      "includesCurrent": true,
+      "historyDepth": 1,
+      "missing": "NaN if prevSpeed1 missing or dtPrev1 missing/<=0"
+    },
+    {
+      "index": 15,
+      "name": "distanceToNextScheduledStopMeters",
+      "units": "m",
+      "formula": "getNextStopInfo(gtfsTripId, currentProgressKm).distanceMeters",
+      "semantics": "Stops ordered by GTFS-mapped stopProgressKm. Next stop is the first with stopProgressKm > currentProgressKm + 0.005 km (5 m pass tolerance). On the CAS loop, after the last stop, wraps to the first stop: distance = (L - current + firstStopProgress) * 1000.",
+      "includesCurrent": true,
+      "historyDepth": 0,
+      "missing": "NaN only if GTFS trip has no stop candidates (should not happen for CAS)"
+    },
+    {
+      "index": 16,
+      "name": "distanceFromPreviousScheduledStopMeters",
+      "units": "m",
+      "formula": "Previous stop = last GTFS stop with stopProgressKm < currentProgressKm - 0.005 km. distance = (current - prevStopProgress) * 1000. If none (near start of shape), wrap to the last stop: (current + L - lastStopProgress) * 1000.",
+      "includesCurrent": true,
+      "historyDepth": 0,
+      "missing": "NaN only if trip has no stops"
+    }
+  ],
+  "featureOrder": [
+    "currentSpeed",
+    "horizonSeconds",
+    "isBusAtStop",
+    "progressSin",
+    "progressCos",
+    "prevSpeed1",
+    "prevSpeed2",
+    "prevSpeed3",
+    "dtPrev1",
+    "dtPrev2",
+    "dtPrev3",
+    "speedDelta1",
+    "speedDelta2",
+    "recentSpeedSlope",
+    "previousRealizedRouteSpeed",
+    "distanceToNextScheduledStopMeters",
+    "distanceFromPreviousScheduledStopMeters"
+  ],
+  "nFeatures": 17
+}
