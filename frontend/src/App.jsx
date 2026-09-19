@@ -98,6 +98,10 @@ function freshnessClass(value) {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function formatMeters(value) { return value == null || Number.isNaN(value) ? "n/a" : `${value.toFixed(1)} m`; }
+function formatImprovement(value) {
+  if (value == null || Number.isNaN(value)) return "n/a";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)} m`;
+}
 
 export default function App() {
   const mapRef = useRef(null);
@@ -336,6 +340,7 @@ export default function App() {
   const sourceMode = state?.sourceMode || state?.mode;
   const selected = (state?.buses || []).find((bus) => bus.id === selectedBusId);
   const evaluation = state?.evaluation;
+  const model7Validation = state?.model7Validation;
 
   return (
     <div className="app">
@@ -397,6 +402,35 @@ export default function App() {
               <p className="note">Auto-validates predictions against next ground-truth observation.</p>
             </>
           ) : <p className="note">Waiting for paired observations…</p>}
+        </section>
+
+        <section className="model7-validation">
+          <h2>CAS Model 7 Validation</h2>
+          {!model7Validation || !model7Validation.available ? (
+            <p className="note">Waiting for CAS pairs…</p>
+          ) : (
+            <>
+              <div className="stat-row"><strong>Completed CAS Pairs:</strong> {model7Validation.completedPairCount}</div>
+              <div className="stat-row"><strong>BT Stale Error:</strong> {formatMeters(model7Validation.staleMeanGeoErrorMeters)}</div>
+              <div className="stat-row"><strong>Model 1:</strong> {formatMeters(model7Validation.model1MeanGeoErrorMeters)}</div>
+              <div className="stat-row model7-result"><strong>Model 7 Safe:</strong> {formatMeters(model7Validation.model7SafeMeanGeoErrorMeters)}</div>
+              <div className="stat-row"><strong>Improvement vs Model 1:</strong> {formatImprovement(model7Validation.improvementVsModel1MeanGeoErrorMeters)}</div>
+              <div className="stat-row"><strong>Hold / Moving:</strong> {model7Validation.nHold} / {model7Validation.nMoving}</div>
+              {model7Validation.movingOnly?.completedPairCount > 0 && (
+                <div className="moving-only">
+                  <strong>Moving only ({model7Validation.movingOnly.completedPairCount}):</strong>
+                  <span> Model 1 {formatMeters(model7Validation.movingOnly.model1MeanGeoErrorMeters)}</span>
+                  <span> · Model 7 {formatMeters(model7Validation.movingOnly.model7SafeMeanGeoErrorMeters)}</span>
+                  <span> · Δ {formatImprovement(model7Validation.movingOnly.improvementVsModel1MeanGeoErrorMeters)}</span>
+                </div>
+              )}
+            </>
+          )}
+          {model7Validation?.mapUsesModel7Safe ? (
+            <p className="note model7-status">CAS vehicles on the map are using Model 7 Safe.</p>
+          ) : model7Validation ? (
+            <p className="note">Evaluation only: the map is currently using Model 1.</p>
+          ) : null}
         </section>
 
         <section>

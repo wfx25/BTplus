@@ -135,6 +135,27 @@ section {
   margin: 4px 0;
 }
 
+.model7-validation {
+  border-left: 3px solid #22c55e;
+  padding-left: 10px;
+}
+
+.model7-result {
+  color: #86efac;
+  font-weight: 700;
+}
+
+.moving-only {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.model7-status {
+  color: #86efac;
+}
+
 @media (max-width: 800px) {
   .panel {
     top: auto;
