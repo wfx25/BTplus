@@ -34,9 +34,12 @@ const stopTimesRows = parse(stopTimesText, {
 // 1. trip_id -> shape_id
 // =====================================================
 const tripToShape = new Map();
+const tripToRouteId = new Map();
+const MODEL7_ELIGIBLE_GTFS_ROUTE_ID = "CAS";
 
 for (const trip of trips) {
     tripToShape.set(trip.trip_id, trip.shape_id);
+    tripToRouteId.set(trip.trip_id, trip.route_id);
 }
 
 // =====================================================
@@ -608,6 +611,133 @@ function getNextStopInfo(
     };
 }
 
+function getPreviousStopInfo(
+    gtfsTripId,
+    currentProgressKm
+) {
+    const tripStops =
+        stopTimesByTrip.get(gtfsTripId);
+
+    if (
+        !tripStops ||
+        tripStops.length === 0
+    ) {
+        return null;
+    }
+
+    const shapeId =
+        tripToShape.get(gtfsTripId);
+
+    if (!shapeId) {
+        return null;
+    }
+
+    const routeLengthKm =
+        shapeRouteLengthsKm.get(shapeId);
+
+    if (
+        !routeLengthKm ||
+        routeLengthKm <= 0
+    ) {
+        return null;
+    }
+
+    const stopCandidates = [];
+
+    for (const stopTime of tripStops) {
+        const stopProgressKm =
+            gtfsShapeDistanceToProgressKm(
+                shapeId,
+                stopTime.shapeDistance
+            );
+
+        if (stopProgressKm === null) {
+            continue;
+        }
+
+        const stop =
+            stopsById.get(
+                stopTime.stopId
+            );
+
+        stopCandidates.push({
+            stopId:
+                stopTime.stopId,
+
+            stopName:
+                stop?.stopName ?? null,
+
+            stopLatitude:
+                stop?.latitude ?? null,
+
+            stopLongitude:
+                stop?.longitude ?? null,
+
+            stopSequence:
+                stopTime.stopSequence,
+
+            stopProgressKm,
+
+            arrivalTime:
+                stopTime.arrivalTime,
+
+            departureTime:
+                stopTime.departureTime,
+
+            timepoint:
+                stopTime.timepoint
+        });
+    }
+
+    if (stopCandidates.length === 0) {
+        return null;
+    }
+
+    stopCandidates.sort(
+        (a, b) =>
+            a.stopProgressKm -
+            b.stopProgressKm
+    );
+
+    const PASS_TOLERANCE_KM = 0.005;
+
+    let previousStop = null;
+    for (const stop of stopCandidates) {
+        if (
+            stop.stopProgressKm <
+            currentProgressKm - PASS_TOLERANCE_KM
+        ) {
+            previousStop = stop;
+        }
+    }
+
+    if (previousStop) {
+        return {
+            ...previousStop,
+            distanceMeters:
+                (
+                    currentProgressKm -
+                    previousStop.stopProgressKm
+                ) * 1000,
+            wrapped: false
+        };
+    }
+
+    const lastStop =
+        stopCandidates[stopCandidates.length - 1];
+
+    return {
+        ...lastStop,
+        distanceMeters:
+            (
+                currentProgressKm +
+                routeLengthKm -
+                lastStop.stopProgressKm
+            ) * 1000,
+        wrapped: true
+    };
+}
+
 // =====================================================
 // 12. Return all stops for a trip
 //
@@ -823,15 +953,30 @@ function getRouteLengthKm(gtfsTripId) {
     return shapeRouteLengthsKm.get(shapeId) || null;
 }
 
+function getGtfsRouteId(gtfsTripId) {
+    if (!gtfsTripId) {
+        return null;
+    }
+    return tripToRouteId.get(gtfsTripId) || null;
+}
+
+function isModel7EligibleTrip(gtfsTripId) {
+    return getGtfsRouteId(gtfsTripId) === MODEL7_ELIGIBLE_GTFS_ROUTE_ID;
+}
+
 module.exports = {
     getRouteProgress,
     getRoutePoint,
     getDirectedRouteProgress,
 
     getNextStopInfo,
+    getPreviousStopInfo,
     getTripStops,
     getUpcomingTurnInfo,
     getRouteGeometry,
     isLoopTrip,
-    getRouteLengthKm
+    getRouteLengthKm,
+    getGtfsRouteId,
+    isModel7EligibleTrip,
+    MODEL7_ELIGIBLE_GTFS_ROUTE_ID
 };
