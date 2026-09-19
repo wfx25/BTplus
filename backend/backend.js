@@ -1341,6 +1341,48 @@ function publicEvaluationStats() {
     };
 }
 
+function validationPayload() {
+    return buildValidationPayload({
+        sessionStartMs,
+        computedAtMs: Date.now(),
+        predictorConfigured: BT_PREDICTOR,
+        pairs: validationPairs,
+        predictorStats: model7Runtime.stats()
+    });
+}
+
+function publicModel7Validation() {
+    const cas = validationPayload().model7EligibleCas;
+    const available = cas.completedPairCount > 0;
+
+    return {
+        available,
+        predictorConfigured: BT_PREDICTOR,
+        mapUsesModel7Safe: BT_PREDICTOR === "model7safe",
+        scope: "cas_gtfs_route_id",
+        gtfsRouteId: "CAS",
+        completedPairCount: cas.completedPairCount,
+        nHold: cas.nHold,
+        nMoving: cas.nMoving,
+        staleMeanGeoErrorMeters:
+            cas.stalePositionBaseline.meanGeoErrorMeters,
+        model1MeanGeoErrorMeters: cas.model1.meanGeoErrorMeters,
+        model7SafeMeanGeoErrorMeters:
+            cas.model7safe.meanGeoErrorMeters,
+        improvementVsModel1MeanGeoErrorMeters:
+            cas.improvementVsModel1.meanGeoErrorMeters,
+        movingOnly: {
+            completedPairCount: cas.movingOnly.completedPairCount,
+            model1MeanGeoErrorMeters:
+                cas.movingOnly.model1.meanGeoErrorMeters,
+            model7SafeMeanGeoErrorMeters:
+                cas.movingOnly.model7safe.meanGeoErrorMeters,
+            improvementVsModel1MeanGeoErrorMeters:
+                cas.movingOnly.improvementVsModel1.meanGeoErrorMeters
+        }
+    };
+}
+
 function buildLatestState(buses) {
     const generatedAt = Date.now();
     latestState = {
@@ -1353,6 +1395,7 @@ function buildLatestState(buses) {
         replay: BT_MODE === "replay" ? replayMetadata() : null,
         buses: buses.map(buildBusPayload),
         evaluation: publicEvaluationStats(),
+        model7Validation: publicModel7Validation(),
         uncertaintyCalibration: getUncertaintyCalibration()
     };
 }
@@ -1478,6 +1521,7 @@ function startHttpServer() {
                 replay: BT_MODE === "replay" ? replayMetadata() : null,
                 buses: [],
                 evaluation: null,
+                model7Validation: publicModel7Validation(),
                 uncertaintyCalibration: []
             });
             return;
@@ -1502,13 +1546,7 @@ function startHttpServer() {
         }
 
         if (requestUrl.pathname === "/api/validation") {
-            sendJson(res, 200, buildValidationPayload({
-                sessionStartMs,
-                computedAtMs: Date.now(),
-                predictorConfigured: BT_PREDICTOR,
-                pairs: validationPairs,
-                predictorStats: model7Runtime.stats()
-            }));
+            sendJson(res, 200, validationPayload());
             return;
         }
 
