@@ -66,6 +66,9 @@ let latestBuses = [];
 let replayActiveIndex = -1;
 let replayWallAnchor = null;
 let replayTimeAnchor = null;
+let replayPaused = false;
+let replayRate = 1;
+let replaySeekVersion = 0;
 const sseClients = new Set();
 let lastObservationFingerprint = "";
 
@@ -258,48 +261,156 @@ function ingestBusObservations(buses) {
     }
 }
 
-function applyReplaySnapshot(index) {
+function replayBounds() {
+    if (!replaySnapshots || replaySnapshots.length === 0) return null;
+    return {
+        startTime: replaySnapshots[0].recordedAt,
+        endTime: replaySnapshots[replaySnapshots.length - 1].recordedAt
+    };
+}
+
+function resetReplaySession() {
+    busStore.clear();
+    evaluatedVersions.clear();
+    predictionHistory.length = 0;
+    validationPairs.length = 0;
+    sessionStartMs = null;
+    model7Runtime.resetAll();
+    lastObservationFingerprint = "";
+}
+
+function applyReplaySnapshot(index, currentTime) {
     const snapshot = replaySnapshots[index];
-    replayCurrentTime = snapshot.recordedAt;
+    replayCurrentTime = currentTime ?? snapshot.recordedAt;
     ingestBusObservations(normalizeRawBuses(snapshot.data));
 }
 
-function replayTick() {
-    if (!replaySnapshots) {
-        loadReplaySnapshots();
+function replayClockNow() {
+    const bounds = replayBounds();
+    if (!bounds) return null;
+    if (replayCurrentTime == null || replayTimeAnchor == null || replayWallAnchor == null) {
+        return bounds.startTime;
     }
+    if (replayPaused) return replayCurrentTime;
+    return Math.min(
+        bounds.endTime,
+        replayTimeAnchor + (Date.now() - replayWallAnchor) * replayRate
+    );
+}
 
-    if (!replaySnapshots || replaySnapshots.length === 0) {
-        return;
+function findReplayIndexAt(time) {
+    let low = 0;
+    let high = replaySnapshots.length - 1;
+    let result = 0;
+    while (low <= high) {
+        const middle = Math.floor((low + high) / 2);
+        if (replaySnapshots[middle].recordedAt <= time) {
+            result = middle;
+            low = middle + 1;
+        } else {
+            high = middle - 1;
+        }
     }
+    return result;
+}
+
+function replayMetadata() {
+    const bounds = replayBounds();
+    if (!bounds) return null;
+    const currentTime = replayClockNow() ?? bounds.startTime;
+    const duration = Math.max(1, bounds.endTime - bounds.startTime);
+    return {
+        startTime: bounds.startTime,
+        endTime: bounds.endTime,
+        currentTime,
+        progress: Math.max(0, Math.min(1, (currentTime - bounds.startTime) / duration)),
+        isPlaying: !replayPaused,
+        rate: replayRate,
+        seekVersion: replaySeekVersion
+    };
+}
+
+function seekReplay(progress) {
+    if (!replaySnapshots) loadReplaySnapshots();
+    const bounds = replayBounds();
+    if (!bounds) return null;
+    const normalizedProgress = Math.max(0, Math.min(1, Number(progress)));
+    if (!Number.isFinite(normalizedProgress)) return null;
+
+    const targetTime = bounds.startTime +
+        normalizedProgress * (bounds.endTime - bounds.startTime);
+    const index = findReplayIndexAt(targetTime);
+    resetReplaySession();
+    replayActiveIndex = index;
+    replayPaused = true;
+    replaySeekVersion += 1;
+    replayWallAnchor = Date.now();
+    replayTimeAnchor = targetTime;
+    applyReplaySnapshot(index, targetTime);
+    publishState(true);
+    return replayMetadata();
+}
+
+function pauseReplay() {
+    const currentTime = replayClockNow();
+    if (currentTime == null) return null;
+    replayCurrentTime = currentTime;
+    replayTimeAnchor = currentTime;
+    replayWallAnchor = Date.now();
+    replayPaused = true;
+    publishState(true);
+    return replayMetadata();
+}
+
+function playReplay() {
+    if (!replaySnapshots) loadReplaySnapshots();
+    const bounds = replayBounds();
+    if (!bounds) return null;
+    if (replayActiveIndex < 0) seekReplay(0);
+    replayCurrentTime = replayClockNow() ?? bounds.startTime;
+    replayTimeAnchor = replayCurrentTime;
+    replayWallAnchor = Date.now();
+    replayPaused = false;
+    publishState(true);
+    return replayMetadata();
+}
+
+function setReplayRate(rate) {
+    const nextRate = Number(rate);
+    if (!Number.isFinite(nextRate) || nextRate < 0.25 || nextRate > 4) return null;
+    const currentTime = replayClockNow();
+    if (currentTime == null) return null;
+    replayCurrentTime = currentTime;
+    replayTimeAnchor = currentTime;
+    replayWallAnchor = Date.now();
+    replayRate = nextRate;
+    publishState(true);
+    return replayMetadata();
+}
+
+function replayTick() {
+    if (!replaySnapshots) loadReplaySnapshots();
+    const bounds = replayBounds();
+    if (!bounds) return false;
 
     if (replayActiveIndex < 0) {
         replayActiveIndex = 0;
         replayWallAnchor = Date.now();
-        replayTimeAnchor = replaySnapshots[0].recordedAt;
-        applyReplaySnapshot(0);
+        replayTimeAnchor = bounds.startTime;
+        applyReplaySnapshot(0, bounds.startTime);
         publishState(true);
         return true;
     }
+    if (replayPaused) return false;
 
-    const t =
-        replayTimeAnchor +
-        (Date.now() - replayWallAnchor);
-    const lastSnapshot =
-        replaySnapshots[replaySnapshots.length - 1];
-
-    if (t > lastSnapshot.recordedAt) {
+    const currentTime = replayClockNow();
+    if (currentTime >= bounds.endTime) {
         console.log("--- Replay looping from start ---");
-        busStore.clear();
-        evaluatedVersions.clear();
-        lastObservationFingerprint = "";
-        model7Runtime.resetAll();
-        validationPairs.length = 0;
-        sessionStartMs = null;
+        resetReplaySession();
         replayActiveIndex = 0;
         replayWallAnchor = Date.now();
-        replayTimeAnchor = replaySnapshots[0].recordedAt;
-        applyReplaySnapshot(0);
+        replayTimeAnchor = bounds.startTime;
+        applyReplaySnapshot(0, bounds.startTime);
         publishState(true);
         return true;
     }
@@ -307,14 +418,16 @@ function replayTick() {
     let applied = false;
     while (
         replayActiveIndex + 1 < replaySnapshots.length &&
-        t >= replaySnapshots[replayActiveIndex + 1].recordedAt
+        currentTime >= replaySnapshots[replayActiveIndex + 1].recordedAt
     ) {
         replayActiveIndex += 1;
-        applyReplaySnapshot(replayActiveIndex);
+        applyReplaySnapshot(replayActiveIndex, replaySnapshots[replayActiveIndex].recordedAt);
         applied = true;
     }
-
     if (applied) {
+        replayCurrentTime = currentTime;
+        replayTimeAnchor = currentTime;
+        replayWallAnchor = Date.now();
         publishState(true);
     }
     return applied;
@@ -1228,6 +1341,48 @@ function publicEvaluationStats() {
     };
 }
 
+function validationPayload() {
+    return buildValidationPayload({
+        sessionStartMs,
+        computedAtMs: Date.now(),
+        predictorConfigured: BT_PREDICTOR,
+        pairs: validationPairs,
+        predictorStats: model7Runtime.stats()
+    });
+}
+
+function publicModel7Validation() {
+    const cas = validationPayload().model7EligibleCas;
+    const available = cas.completedPairCount > 0;
+
+    return {
+        available,
+        predictorConfigured: BT_PREDICTOR,
+        mapUsesModel7Safe: BT_PREDICTOR === "model7safe",
+        scope: "cas_gtfs_route_id",
+        gtfsRouteId: "CAS",
+        completedPairCount: cas.completedPairCount,
+        nHold: cas.nHold,
+        nMoving: cas.nMoving,
+        staleMeanGeoErrorMeters:
+            cas.stalePositionBaseline.meanGeoErrorMeters,
+        model1MeanGeoErrorMeters: cas.model1.meanGeoErrorMeters,
+        model7SafeMeanGeoErrorMeters:
+            cas.model7safe.meanGeoErrorMeters,
+        improvementVsModel1MeanGeoErrorMeters:
+            cas.improvementVsModel1.meanGeoErrorMeters,
+        movingOnly: {
+            completedPairCount: cas.movingOnly.completedPairCount,
+            model1MeanGeoErrorMeters:
+                cas.movingOnly.model1.meanGeoErrorMeters,
+            model7SafeMeanGeoErrorMeters:
+                cas.movingOnly.model7safe.meanGeoErrorMeters,
+            improvementVsModel1MeanGeoErrorMeters:
+                cas.movingOnly.improvementVsModel1.meanGeoErrorMeters
+        }
+    };
+}
+
 function buildLatestState(buses) {
     const generatedAt = Date.now();
     latestState = {
@@ -1237,8 +1392,10 @@ function buildLatestState(buses) {
         mode: BT_MODE,
         recording: SHOULD_RECORD,
         serverTime: getCurrentTime(),
+        replay: BT_MODE === "replay" ? replayMetadata() : null,
         buses: buses.map(buildBusPayload),
         evaluation: publicEvaluationStats(),
+        model7Validation: publicModel7Validation(),
         uncertaintyCalibration: getUncertaintyCalibration()
     };
 }
@@ -1259,6 +1416,36 @@ function sendJson(res, status, body) {
         "Cache-Control": "no-store"
     });
     res.end(payload);
+}
+
+function readJsonBody(req) {
+    return new Promise((resolve, reject) => {
+        let body = "";
+        req.on("data", chunk => {
+            body += chunk;
+            if (body.length > 100_000) {
+                reject(new Error("Request body is too large"));
+                req.destroy();
+            }
+        });
+        req.on("end", () => {
+            if (!body.trim()) return resolve({});
+            try {
+                resolve(JSON.parse(body));
+            } catch {
+                reject(new Error("Request body must be valid JSON"));
+            }
+        });
+        req.on("error", reject);
+    });
+}
+
+function handleReplayControl(action, body) {
+    if (action === "seek") return seekReplay(body.progress);
+    if (action === "pause") return pauseReplay();
+    if (action === "play") return playReplay();
+    if (action === "rate") return setReplayRate(body.rate);
+    return null;
 }
 
 function serveStatic(req, res) {
@@ -1295,8 +1482,31 @@ function serveStatic(req, res) {
 }
 
 function startHttpServer() {
-    const server = http.createServer((req, res) => {
+    const server = http.createServer(async (req, res) => {
         const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+
+        if (requestUrl.pathname.startsWith("/api/replay/")) {
+            if (BT_MODE !== "replay") {
+                sendJson(res, 409, { error: "Replay controls require BT_MODE=replay" });
+                return;
+            }
+            if (req.method !== "POST") {
+                sendJson(res, 405, { error: "Use POST for replay controls" });
+                return;
+            }
+            try {
+                const action = requestUrl.pathname.split("/").pop();
+                const replay = handleReplayControl(action, await readJsonBody(req));
+                if (!replay) {
+                    sendJson(res, 400, { error: "Invalid replay control request" });
+                    return;
+                }
+                sendJson(res, 200, { replay });
+            } catch (error) {
+                sendJson(res, 400, { error: error.message || "Invalid replay request" });
+            }
+            return;
+        }
 
         if (requestUrl.pathname === "/api/state") {
             if (!latestState) {
@@ -1308,8 +1518,10 @@ function startHttpServer() {
                 mode: BT_MODE,
                 recording: SHOULD_RECORD,
                 serverTime: getCurrentTime(),
+                replay: BT_MODE === "replay" ? replayMetadata() : null,
                 buses: [],
                 evaluation: null,
+                model7Validation: publicModel7Validation(),
                 uncertaintyCalibration: []
             });
             return;
@@ -1334,13 +1546,7 @@ function startHttpServer() {
         }
 
         if (requestUrl.pathname === "/api/validation") {
-            sendJson(res, 200, buildValidationPayload({
-                sessionStartMs,
-                computedAtMs: Date.now(),
-                predictorConfigured: BT_PREDICTOR,
-                pairs: validationPairs,
-                predictorStats: model7Runtime.stats()
-            }));
+            sendJson(res, 200, validationPayload());
             return;
         }
 
