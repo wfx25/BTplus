@@ -4,6 +4,17 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+// 格式化日期：自动显示星期与月日 (例如: "Fri, Sep 18")
+function formatReplayDate(timestamp) {
+  if (!Number.isFinite(timestamp)) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  }).format(new Date(timestamp));
+}
+
+// 格式化时间：时:分:秒
 function formatReplayTime(timestamp) {
   if (!Number.isFinite(timestamp)) return "--:--:--";
   return new Intl.DateTimeFormat(undefined, {
@@ -73,9 +84,27 @@ export default function ReplayControls({ replay, stateTimestamp }) {
 
   return (
     <section className="replay-controls" aria-label="Replay timeline controls">
-      <div className="replay-title-row">
-        <h2>Replay timeline</h2>
-        <span>{Math.round(displayedProgress * 100)}%</span>
+      <div className="replay-title-row" style={{ alignItems: "flex-start" }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Replay timeline</h2>
+          {displayedTime && (
+            <span
+              style={{
+                fontSize: "0.78rem",
+                color: "#f59e0b",
+                fontWeight: 700,
+                display: "inline-block",
+                marginTop: "2px",
+                background: "rgba(245, 158, 11, 0.15)",
+                padding: "1px 6px",
+                borderRadius: "4px"
+              }}
+            >
+              📅 {formatReplayDate(displayedTime)}
+            </span>
+          )}
+        </div>
+        <span style={{ fontWeight: 600 }}>{Math.round(displayedProgress * 100)}%</span>
       </div>
       <input
         className="replay-slider"
@@ -96,7 +125,9 @@ export default function ReplayControls({ replay, stateTimestamp }) {
       />
       <div className="replay-times">
         <span>{formatReplayTime(replay.startTime)}</span>
-        <strong>{formatReplayTime(displayedTime)}</strong>
+        <strong style={{ color: "#38bdf8", fontWeight: 700 }}>
+          {formatReplayTime(displayedTime)}
+        </strong>
         <span>{formatReplayTime(replay.endTime)}</span>
       </div>
       <div className="replay-actions">
@@ -121,7 +152,9 @@ export default function ReplayControls({ replay, stateTimestamp }) {
           </select>
         </label>
       </div>
-      <p className="note">Drag to preview a time; release to seek. Seeking pauses playback and resets validation for the new replay session.</p>
+      <p className="note">
+        Drag to preview a time; release to seek. Seeking pauses playback and resets validation for the new replay session.
+      </p>
       {requestError && <p className="replay-error">{requestError}</p>}
     </section>
   );
