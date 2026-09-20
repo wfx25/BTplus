@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { apiUrl } from "../apiBase.js";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -47,7 +48,7 @@ export default function ReplayControls({ replay, stateTimestamp }) {
     setPending(true);
     setRequestError(null);
     try {
-      const response = await fetch(`/api/replay/${action}`, {
+      const response = await fetch(apiUrl(`/api/replay/${action}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)

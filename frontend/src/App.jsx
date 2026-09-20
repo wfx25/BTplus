@@ -8,6 +8,7 @@ import {
   visualPredictedPosition
 } from "./predictionPlayback.js";
 import ReplayControls from "./components/ReplayControls.jsx";
+import { apiUrl } from "./apiBase.js";
 
 // === 黑堡 BT 真实 UCB 路线高精度街道坐标 ===
 const MOCK_UCB_COORDINATES = [
@@ -178,7 +179,7 @@ export default function App() {
   function cacheRoute(tripId) {
     if (!tripId) return Promise.resolve(null);
     if (routeCacheRef.current.has(tripId)) return Promise.resolve(routeCacheRef.current.get(tripId));
-    return fetch(`/api/route?tripId=${encodeURIComponent(tripId)}`)
+    return fetch(apiUrl(`/api/route?tripId=${encodeURIComponent(tripId)}`))
       .then((res) => { if (!res.ok) throw new Error(); return res.json(); })
       .then((payload) => {
         const coords = payload.coordinates || null;
@@ -416,12 +417,12 @@ export default function App() {
       for (const bus of next.buses || []) cacheRoute(bus.gtfsTripId);
     }
 
-    fetch("/api/state")
+    fetch(apiUrl("/api/state"))
       .then((res) => { if (!res.ok) throw new Error(); return res.json(); })
       .then((next) => { if (!cancelled) applyState(next); })
       .catch(() => { if (!cancelled) applyState(createMockState()); });
 
-    source = new EventSource("/api/events");
+    source = new EventSource(apiUrl("/api/events"));
     source.onmessage = (event) => { try { applyState(JSON.parse(event.data)); } catch (err) {} };
     source.onerror = () => {};
 
