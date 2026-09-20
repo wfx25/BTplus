@@ -3,10 +3,27 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { URL } = require("url");
+
+function cliValue(name, envName, fallback) {
+    const flag = `--${name}`;
+    const argv = process.argv.slice(2);
+    for (let i = 0; i < argv.length; i += 1) {
+        const arg = argv[i];
+        if (arg === flag && argv[i + 1] && !argv[i + 1].startsWith("-")) {
+            return argv[i + 1];
+        }
+        if (arg.startsWith(`${flag}=`)) return arg.slice(flag.length + 1);
+    }
+    if (envName && process.env[envName] != null && process.env[envName] !== "") {
+        return process.env[envName];
+    }
+    return fallback;
+}
+
 const BT_API_URL =
     "https://ridebt.org/index.php?option=com_ajax&module=bt_map&method=getBuses&format=json&Itemid=101&method=getBuses";
-const BT_MODE = process.env.BT_MODE || "live";
-const PORT = Number(process.env.PORT) || 3000;
+const BT_MODE = cliValue("mode", "BT_MODE", "live");
+const PORT = Number(cliValue("port", "PORT", "3000"));
 const {
     getRouteProgress,
     getRoutePoint,
@@ -31,7 +48,7 @@ const RECORDING_FILE =
     process.env.BT_RECORD_FILE || "./recordings/session.jsonl";
 const SHOULD_RECORD = process.env.BT_RECORD === "true";
 const BT_PREDICTOR_RAW =
-    (process.env.BT_PREDICTOR || "model1").toLowerCase();
+    String(cliValue("predictor", "BT_PREDICTOR", "model1")).toLowerCase();
 const BT_PREDICTOR =
     BT_PREDICTOR_RAW === "model7safe" ? "model7safe" : "model1";
 const model7Runtime = createModel7Runtime();
@@ -58,7 +75,7 @@ if (
 
 let replayCurrentTime = null;
 const REPLAY_FILE =
-    process.env.BT_REPLAY_FILE || "./recordings/friday-peak.jsonl";
+    cliValue("replay-file", "BT_REPLAY_FILE", "./recordings/friday-peak.jsonl");
 let replaySnapshots = null;
 let replayIndex = 0;
 let replayFinished = false;
@@ -1411,11 +1428,28 @@ const MIME_TYPES = {
     ".ico": "image/x-icon"
 };
 
+function applyCors(req, res) {
+    const configured = process.env.CORS_ORIGIN || "*";
+    const origin = req.headers.origin;
+    let allow = "*";
+    if (configured !== "*") {
+        const list = configured.split(",").map((item) => item.trim()).filter(Boolean);
+        if (origin && list.includes(origin)) allow = origin;
+        else if (list.length === 1) allow = list[0];
+    }
+    res.setHeader("Access-Control-Allow-Origin", allow);
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Max-Age", "86400");
+}
+
 function sendJson(res, status, body) {
     const payload = JSON.stringify(body);
     res.writeHead(status, {
         "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store"
+        "Cache-Control": "no-store",
+        "Access-Control-Allow-Origin":
+            res.getHeader("Access-Control-Allow-Origin") || "*"
     });
     res.end(payload);
 }
@@ -1485,6 +1519,12 @@ function serveStatic(req, res) {
 
 function startHttpServer() {
     const server = http.createServer(async (req, res) => {
+        applyCors(req, res);
+        if (req.method === "OPTIONS") {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
         const requestUrl = new URL(req.url, `http://${req.headers.host}`);
 
         if (requestUrl.pathname.startsWith("/api/replay/")) {
@@ -1534,7 +1574,9 @@ function startHttpServer() {
                 "Content-Type": "text/event-stream",
                 "Cache-Control": "no-cache, no-transform",
                 Connection: "keep-alive",
-                "X-Accel-Buffering": "no"
+                "X-Accel-Buffering": "no",
+                "Access-Control-Allow-Origin":
+                    res.getHeader("Access-Control-Allow-Origin") || "*"
             });
             res.write("\n");
             sseClients.add(res);
@@ -1568,7 +1610,7 @@ function startHttpServer() {
         serveStatic(req, res);
     });
 
-    server.listen(PORT, () => {
+    server.listen(PORT, "0.0.0.0", () => {
         console.log(
             `BT+ server ${BT_MODE} on http://localhost:${PORT}` +
             ` | predictor=${BT_PREDICTOR}` +

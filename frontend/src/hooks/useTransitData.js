@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createMockState, normalizeTransitMessage } from "../services/transitData.js";
+import { apiUrl } from "../apiBase.js";
 
 export function useTransitData() {
   const [state, setState] = useState(null);
@@ -23,7 +24,7 @@ export function useTransitData() {
       setError(reason);
     };
 
-    fetch("/api/state")
+    fetch(apiUrl("/api/state"))
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
@@ -31,7 +32,7 @@ export function useTransitData() {
       .then(applyLiveState)
       .catch((requestError) => useMockState(requestError.message || "Backend unavailable"));
 
-    const source = new EventSource("/api/events");
+    const source = new EventSource(apiUrl("/api/events"));
     source.onmessage = (event) => {
       try {
         applyLiveState(JSON.parse(event.data));

@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: btplus-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node backend.js
+    envVars:
+      - key: BT_MODE
+        value: live
+      - key: BT_RECORD
+        value: "false"
+      - key: BT_PREDICTOR
+        value: model7safe
+      - key: CORS_ORIGIN
+        value: "*"
