@@ -16,6 +16,7 @@ const {
     getRouteGeometry,
     isLoopTrip,
     getRouteLengthKm,
+    getRouteStyle,
     isModel7EligibleTrip
 } = require("./gtfs");
 const {
@@ -1091,6 +1092,7 @@ function buildBusPayload(bus) {
         routeId: bus.routeId,
         patternName: bus.patternName,
         gtfsTripId: bus.gtfsTripId,
+        ...getRouteStyle(bus.gtfsTripId, bus.routeId),
         generatedAt: Date.now(),
         observationVersion: bus.version,
         reported: {
@@ -1557,7 +1559,8 @@ function startHttpServer() {
                 : null;
             sendJson(res, 200, {
                 gtfsTripId: tripId,
-                coordinates
+                coordinates,
+                ...getRouteStyle(tripId)
             });
             return;
         }
