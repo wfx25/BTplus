@@ -69,21 +69,31 @@ function createMockState() {
   };
 }
 
-// === BT 官方路线专属配色卡 ===
+// === BT 官方 GTFS 权威全量路线配色表 (来自官方 routes.txt) ===
 const BT_ROUTE_COLORS = {
-  CAS: "#6B7280", CRC: "#16A34A", BLU: "#2563EB", GRN: "#84CC16",
-  HDG: "#D97706", HWC: "#8B5CF6", HXS: "#06B6D4", NMG: "#DC2626",
-  PHD: "#EC4899", SME: "#0EA5E9", TCP: "#F97316", TTH: "#9F1239",
-  TTS: "#F59E0B", UCB: "#65A30D"
+  HWA: "#1A4882", HWB: "#0098D4", HWC: "#7156A5", HWS: "#7156A5",
+  TCR: "#EE7C0E", TCP: "#EE7C0E", TOM: "#EE7C0E",
+  TTH: "#87012D", TTS: "#EE7C0E", TTT: "#EE7C0E",
+  HXP: "#00A4A7", HXS: "#00A4A7",
+  PHD: "#FF69B4", PHB: "#00782A",
+  SMA: "#84B817", SME: "#0098D4", SMS: "#0098D4",
+  UCB: "#84B817", CAS: "#302F2F", CRC: "#00782A", CRB: "#E32017",
+  NMG: "#E32017", NMS: "#E32017", PRG: "#7156A5", HDG: "#874901",
+  BMR: "#FF69B4", BMW: "#FF69B4", BLU: "#0000FF", GRN: "#84B817"
 };
 
-function getRouteColor(routeId) {
-  if (!routeId) return "#ffffff";
-  return BT_ROUTE_COLORS[routeId.toUpperCase()] || "#ffffff";
+function getRouteColor(routeId, backendColor) {
+  if (backendColor) return backendColor;
+  if (!routeId) return "#E87722";
+  const id = routeId.toUpperCase();
+  if (BT_ROUTE_COLORS[id]) return BT_ROUTE_COLORS[id];
+  const fallbackPalette = ["#06B6D4", "#8B5CF6", "#F59E0B", "#10B981", "#EC4899", "#3B82F6", "#F97316"];
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  return fallbackPalette[Math.abs(hash) % fallbackPalette.length];
 }
 
-function getReportedIcon(routeId) {
-  const color = getRouteColor(routeId);
+function getReportedIcon(color) {
   return L.divIcon({
     className: "",
     html: `<div class="marker-reported" style="background-color: ${color};"></div>`,
@@ -101,6 +111,29 @@ function getPredictedIcon(color) {
   });
 }
 
+// === Tom 移植：Stadia Maps Alidade Smooth 顶级雅致底图生成器 ===
+function createBasemapLayer() {
+  const cartoKey = import.meta.env.VITE_CARTO_KEY;
+  if (cartoKey) {
+    return L.tileLayer(
+      `https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoKey)}`,
+      {
+        maxZoom: 20,
+        attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+      }
+    );
+  }
+  const stadiaKey = import.meta.env.VITE_STADIA_API_KEY;
+  const stadiaUrl = stadiaKey
+    ? `https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=${encodeURIComponent(stadiaKey)}`
+    : "https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png";
+  return L.tileLayer(stadiaUrl, {
+    maxZoom: 20,
+    attribution:
+      '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a>, &copy; OpenStreetMap contributors'
+  });
+}
+
 function freshnessClass(value) {
   if (value === "fresh") return "fresh-fresh";
   if (value === "recent") return "fresh-recent";
@@ -109,7 +142,10 @@ function freshnessClass(value) {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function formatMeters(value) { return value == null || Number.isNaN(value) ? "n/a" : `${value.toFixed(1)} m`; }
-function formatImprovement(value) { return value == null || Number.isNaN(value) ? "n/a" : `${value >= 0 ? "+" : ""}${value.toFixed(1)} m`; }
+function formatImprovement(value) {
+  if (value == null || Number.isNaN(value)) return "n/a";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)} m`;
+}
 
 export default function App() {
   const mapRef = useRef(null);
@@ -137,18 +173,15 @@ export default function App() {
   const routeAnimatedRef = useRef(false);
   const [isTrackingUI, setIsTrackingUI] = useState(false);
   
-  // 预测点与光带颜色控制 (默认 true = 专属色)
   const [useRouteColor, setUseRouteColor] = useState(true);
   const useRouteColorRef = useRef(true);
 
-  // 需求修改：控制路线颜色 (默认 false 不打勾 = VT Maroon 枣红；打勾 = 线路专属色)
   const [useRouteLineColor, setUseRouteLineColor] = useState(false);
   const useRouteLineColorRef = useRef(false);
 
   function toggleRouteLineColor(checked) {
     setUseRouteLineColor(checked);
     useRouteLineColorRef.current = checked;
-    // 勾选状态改变时，立刻强制重绘当前路线！
     if (selectedBusIdRef.current && stateRef.current) {
       const bus = stateRef.current.buses.find((b) => b.id === selectedBusIdRef.current);
       if (bus) loadRoute(bus.gtfsTripId, true);
@@ -161,7 +194,6 @@ export default function App() {
 
   selectedBusIdRef.current = selectedBusId;
 
-  // 当侧边栏折叠/展开时，通知 Leaflet 地图重新填满屏幕
   useEffect(() => {
     if (mapRef.current) {
       setTimeout(() => {
@@ -226,12 +258,11 @@ export default function App() {
       if (!coordinates || coordinates.length < 2) return;
       const latlngs = coordinates.map((coord) => [coord[1], coord[0]]);
 
-      // 核心换色逻辑：默认不打勾是 VT Maroon；打勾时切换为专属色！
-      let dynamicColor = "#861F41"; // 默认：VT 官方枣红
+      let dynamicColor = "#861F41"; // 默认 VT Maroon 枣红
       if (useRouteLineColorRef.current && stateRef.current && selectedBusIdRef.current) {
         const selectedBus = stateRef.current.buses.find((b) => b.id === selectedBusIdRef.current);
         if (selectedBus) {
-          dynamicColor = getRouteColor(selectedBus.routeId); // 打勾：变身为路线专属色！
+          dynamicColor = getRouteColor(selectedBus.routeId, selectedBus.routeColor);
         }
       }
 
@@ -250,6 +281,7 @@ export default function App() {
     const map = L.map(mapNodeRef.current, {
       zoomControl: true,
       minZoom: 12,
+      maxZoom: 20,
       maxBounds: [[37.05, -80.55], [37.35, -80.30]],
       maxBoundsViscosity: 1.0
     }).setView([37.230, -80.424], 14);
@@ -264,10 +296,8 @@ export default function App() {
     map.getContainer().addEventListener("wheel", breakFollow);
     map.getContainer().addEventListener("touchstart", breakFollow);
 
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors"
-    }).addTo(map);
+    // 采用 Tom 的高级底图图层生成器！
+    createBasemapLayer().addTo(map);
 
     const rangeLayer = L.layerGroup().addTo(map);
     const reportedLayer = L.layerGroup().addTo(map);
@@ -318,12 +348,13 @@ export default function App() {
             predicted = null;
           }
 
-          const desiredColor = useRouteColorRef.current ? getRouteColor(bus.routeId) : "#E87722";
+          const busBaseColor = getRouteColor(bus.routeId, bus.routeColor);
+          const desiredColor = useRouteColorRef.current ? busBaseColor : "#E87722";
 
           let entry = markersRef.current.get(bus.id);
           if (!entry) {
             const reported = L.marker([bus.reported.latitude, bus.reported.longitude], {
-              icon: getReportedIcon(bus.routeId),
+              icon: getReportedIcon(busBaseColor),
               zIndexOffset: 200
             }).addTo(layers.reported);
             reported.on("click", () => selectBus(bus));
@@ -335,10 +366,14 @@ export default function App() {
               : null;
             if (predictedMarker) predictedMarker.on("click", () => selectBus(bus));
 
-            entry = { reported, predicted: predictedMarker, currentColor: desiredColor };
+            entry = { reported, predicted: predictedMarker, currentColor: desiredColor, currentBaseColor: busBaseColor };
             markersRef.current.set(bus.id, entry);
             if (predicted) predictedDisplayRef.current.set(bus.id, { lat: predicted.latitude, lon: predicted.longitude });
           } else {
+            if (entry.currentBaseColor !== busBaseColor) {
+              entry.reported.setIcon(getReportedIcon(busBaseColor));
+              entry.currentBaseColor = busBaseColor;
+            }
             entry.reported.setLatLng([bus.reported.latitude, bus.reported.longitude]);
             entry.reported.off("click");
             entry.reported.on("click", () => selectBus(bus));
@@ -418,7 +453,8 @@ export default function App() {
 
           const progressKm = progressFromState(ps, bus.generatedAt, animationNow);
           const range = rangeCoordinates(routeCoordinates, progressKm, bus.uncertainty.p80Meters, ps.routeLengthKm, ps.loop);
-          const desiredColor = useRouteColorRef.current ? getRouteColor(bus.routeId) : "#E87722";
+          const busBaseColor = getRouteColor(bus.routeId, bus.routeColor);
+          const desiredColor = useRouteColorRef.current ? busBaseColor : "#E87722";
 
           if (range) {
             if (!entry.rangeLine) {
@@ -530,8 +566,6 @@ export default function App() {
               />
               Route-Specific Prediction
             </label>
-
-            {/* 核心新选项：打勾时变路线专属色，不打勾时保持 VT Maroon 枣红 */}
             <label>
               <input
                 type="checkbox"
@@ -546,7 +580,6 @@ export default function App() {
 
       {/* 3. 具备一键平滑收起/展开功能的现代科技感侧边栏 */}
       <aside className={`panel ${panelCollapsed ? "collapsed" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}>
-        {/* 折叠手柄按钮 (贴在侧边栏左边缘，随时一键推开/合上) */}
         <button
           className="panel-dock-btn"
           type="button"
@@ -597,10 +630,15 @@ export default function App() {
                 <span>Route</span>
                 <span
                   style={{
-                    color: getRouteColor(selected.routeId),
+                    // 1. 保留原本官方的纯正路线颜色（CAS 依然是深黑炭灰色！）
+                    color: getRouteColor(selected.routeId, selected.routeColor),
                     fontWeight: 900,
-                    textShadow: "0 0 10px rgba(255,255,255,0.2)",
-                    fontSize: "1.1rem"
+                    fontSize: "1.25rem",
+                    letterSpacing: "0.08em",
+                    // 2. 贴身白色文字描边（给字母笔画外圈包上纯白轮廓）
+                    WebkitTextStroke: selected.routeId?.toUpperCase() === "CAS" ? "1.2px #ffffff" : "0.5px rgba(255, 255, 255, 0.4)",
+                    paintOrder: "stroke fill", // 确保文字内部颜色不被描边吃掉
+                    textShadow: "0 0 10px rgba(255, 255, 255, 0.3)" // 轮廓外微光
                   }}
                 >
                   {selected.routeId}

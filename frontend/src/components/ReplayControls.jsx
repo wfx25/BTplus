@@ -4,7 +4,6 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-// 格式化日期：自动显示星期与月日 (例如: "Fri, Sep 18")
 function formatReplayDate(timestamp) {
   if (!Number.isFinite(timestamp)) return "";
   return new Intl.DateTimeFormat(undefined, {
@@ -14,7 +13,6 @@ function formatReplayDate(timestamp) {
   }).format(new Date(timestamp));
 }
 
-// 格式化时间：时:分:秒
 function formatReplayTime(timestamp) {
   if (!Number.isFinite(timestamp)) return "--:--:--";
   return new Intl.DateTimeFormat(undefined, {
@@ -82,79 +80,78 @@ export default function ReplayControls({ replay, stateTimestamp }) {
 
   if (!replay) return null;
 
+  const currentRate = Number(replay.rate) || 1;
+
   return (
-    <section className="replay-controls" aria-label="Replay timeline controls">
-      <div className="replay-title-row" style={{ alignItems: "flex-start" }}>
-        <div>
-          <h2 style={{ margin: 0 }}>Replay timeline</h2>
+    <section className="replay-player-card" aria-label="Replay timeline controls">
+      {/* 1. 顶部标题与日期胶囊 */}
+      <div className="replay-card-header">
+        <div className="replay-title-wrap">
+          <span className="replay-title-dot" />
+          <h2 className="replay-title-text">Replay Session</h2>
           {displayedTime && (
-            <span
-              style={{
-                fontSize: "0.78rem",
-                color: "#f59e0b",
-                fontWeight: 700,
-                display: "inline-block",
-                marginTop: "2px",
-                background: "rgba(245, 158, 11, 0.15)",
-                padding: "1px 6px",
-                borderRadius: "4px"
-              }}
-            >
+            <span className="replay-date-pill">
               📅 {formatReplayDate(displayedTime)}
             </span>
           )}
         </div>
-        <span style={{ fontWeight: 600 }}>{Math.round(displayedProgress * 100)}%</span>
+        <span className="replay-pct-badge">{Math.round(displayedProgress * 100)}%</span>
       </div>
-      <input
-        className="replay-slider"
-        type="range"
-        min="0"
-        max="1000"
-        step="1"
-        value={Math.round(displayedProgress * 1000)}
-        aria-label="Replay progress"
-        onChange={(event) => setDraftProgress(Number(event.target.value) / 1000)}
-        onPointerUp={(event) => commitSeek(Number(event.currentTarget.value) / 1000)}
-        onKeyUp={(event) => {
-          if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-            commitSeek(Number(event.currentTarget.value) / 1000);
-          }
-        }}
-        disabled={pending}
-      />
-      <div className="replay-times">
-        <span>{formatReplayTime(replay.startTime)}</span>
-        <strong style={{ color: "#38bdf8", fontWeight: 700 }}>
-          {formatReplayTime(displayedTime)}
-        </strong>
-        <span>{formatReplayTime(replay.endTime)}</span>
+
+      {/* 2. 现代流体进度条 */}
+      <div className="replay-scrubber-box">
+        <input
+          className="modern-replay-slider"
+          type="range"
+          min="0"
+          max="1000"
+          step="1"
+          value={Math.round(displayedProgress * 1000)}
+          aria-label="Replay progress"
+          onChange={(event) => setDraftProgress(Number(event.target.value) / 1000)}
+          onPointerUp={(event) => commitSeek(Number(event.currentTarget.value) / 1000)}
+          onKeyUp={(event) => {
+            if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+              commitSeek(Number(event.currentTarget.value) / 1000);
+            }
+          }}
+          disabled={pending}
+        />
       </div>
-      <div className="replay-actions">
+
+      {/* 3. 三栏对齐的时间戳 */}
+      <div className="replay-time-display">
+        <span className="time-bound">{formatReplayTime(replay.startTime)}</span>
+        <span className="time-current-glow">{formatReplayTime(displayedTime)}</span>
+        <span className="time-bound">{formatReplayTime(replay.endTime)}</span>
+      </div>
+
+      {/* 4. 播放按钮与倍速快捷胶囊 */}
+      <div className="replay-control-bar">
         <button
           type="button"
+          className={`replay-btn-toggle ${replay.isPlaying ? "btn-pause" : "btn-play"}`}
           onClick={() => sendControl(replay.isPlaying ? "pause" : "play")}
           disabled={pending}
         >
-          {replay.isPlaying ? "Pause" : "Play"}
+          {replay.isPlaying ? "⏸ Pause" : "▶ Play"}
         </button>
-        <label>
-          Speed
-          <select
-            value={replay.rate}
-            disabled={pending}
-            onChange={(event) => sendControl("rate", { rate: Number(event.target.value) })}
-          >
-            <option value="0.5">0.5×</option>
-            <option value="1">1×</option>
-            <option value="2">2×</option>
-            <option value="4">4×</option>
-          </select>
-        </label>
+
+        <div className="replay-speed-selector">
+          {[0.5, 1, 2, 4].map((speed) => (
+            <button
+              key={speed}
+              type="button"
+              className={`speed-pill ${currentRate === speed ? "speed-active" : ""}`}
+              onClick={() => sendControl("rate", { rate: speed })}
+              disabled={pending}
+            >
+              {speed}×
+            </button>
+          ))}
+        </div>
       </div>
-      <p className="note">
-        Drag to preview a time; release to seek. Seeking pauses playback and resets validation for the new replay session.
-      </p>
+
       {requestError && <p className="replay-error">{requestError}</p>}
     </section>
   );
