@@ -9,6 +9,10 @@ const tripsText = fs.readFileSync("./trips.txt", "utf8");
 const shapesText = fs.readFileSync("./shapes.txt", "utf8");
 const stopsText = fs.readFileSync("./gtfs/stops.txt", "utf8");
 const stopTimesText = fs.readFileSync("./gtfs/stop_times.txt", "utf8");
+const routesPath = "./gtfs/routes.txt";
+const routesText = fs.existsSync(routesPath)
+    ? fs.readFileSync(routesPath, "utf8")
+    : null;
 
 const trips = parse(tripsText, {
     columns: true,
@@ -30,6 +34,20 @@ const stopTimesRows = parse(stopTimesText, {
     skip_empty_lines: true
 });
 
+const routesRows = routesText
+    ? parse(routesText, {
+        columns: true,
+        skip_empty_lines: true,
+        bom: true
+    })
+    : [];
+
+if (!routesText) {
+    console.warn(
+        "GTFS routes.txt not found at ./gtfs/routes.txt; using default marker colors"
+    );
+}
+
 // =====================================================
 // 1. trip_id -> shape_id
 // =====================================================
@@ -40,6 +58,29 @@ const MODEL7_ELIGIBLE_GTFS_ROUTE_ID = "CAS";
 for (const trip of trips) {
     tripToShape.set(trip.trip_id, trip.shape_id);
     tripToRouteId.set(trip.trip_id, trip.route_id);
+}
+
+function normalizeGtfsHex(value) {
+    if (!value || typeof value !== "string") {
+        return null;
+    }
+    const hex = value.trim().replace(/^#/, "");
+    if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
+        return null;
+    }
+    return `#${hex.toUpperCase()}`;
+}
+
+const routeStylesById = new Map();
+
+for (const row of routesRows) {
+    if (!row.route_id) {
+        continue;
+    }
+    routeStylesById.set(row.route_id, {
+        color: normalizeGtfsHex(row.route_color),
+        textColor: normalizeGtfsHex(row.route_text_color)
+    });
 }
 
 // =====================================================
@@ -964,6 +1005,19 @@ function isModel7EligibleTrip(gtfsTripId) {
     return getGtfsRouteId(gtfsTripId) === MODEL7_ELIGIBLE_GTFS_ROUTE_ID;
 }
 
+function getRouteStyle(gtfsTripId, fallbackRouteId) {
+    const gtfsRouteId = getGtfsRouteId(gtfsTripId);
+    const style =
+        (gtfsRouteId && routeStylesById.get(gtfsRouteId)) ||
+        (fallbackRouteId && routeStylesById.get(fallbackRouteId)) ||
+        null;
+    return {
+        gtfsRouteId: gtfsRouteId || null,
+        routeColor: style?.color || null,
+        routeTextColor: style?.textColor || null
+    };
+}
+
 module.exports = {
     getRouteProgress,
     getRoutePoint,
@@ -977,6 +1031,7 @@ module.exports = {
     isLoopTrip,
     getRouteLengthKm,
     getGtfsRouteId,
+    getRouteStyle,
     isModel7EligibleTrip,
     MODEL7_ELIGIBLE_GTFS_ROUTE_ID
 };
