@@ -253,6 +253,10 @@ export default function App() {
         layers.range.removeLayer(entry.rangeLine);
         entry.rangeLine = null;
       }
+      if (entry.connector) {
+        layers.range.removeLayer(entry.connector);
+        entry.connector = null;
+      }
       if (busId != null) {
         predictedDisplayRef.current.delete(busId);
       }
@@ -297,7 +301,7 @@ export default function App() {
               zIndexOffset: 200
             }).addTo(layers.reported);
             reported.on("click", () => selectBus(bus));
-            entry = { reported, predicted: null, rangeLine: null, routeColor: fill };
+            entry = { reported, predicted: null, rangeLine: null, connector: null, routeColor: fill };
             markersRef.current.set(bus.id, entry);
           } else {
             if (entry.routeColor !== fill) {
@@ -310,7 +314,14 @@ export default function App() {
             entry.reported.off("click"); entry.reported.on("click", () => selectBus(bus));
           }
 
+          const isFocus = focusId != null && bus.id === focusId;
+          entry.reported.setOpacity(isFocus ? 0.18 : 1);
+
           if (!predictionVisible) {
+            if (entry.connector) {
+              layers.range.removeLayer(entry.connector);
+              entry.connector = null;
+            }
             removePredictionLayers(entry, layers, bus.id);
             continue;
           }
@@ -341,6 +352,34 @@ export default function App() {
             predictedDisplayRef.current.delete(bus.id);
           }
 
+          const tracked = predictedDisplayRef.current.get(bus.id);
+          if (isFocus && tracked && bus.reported) {
+            const link = [
+              [bus.reported.latitude, bus.reported.longitude],
+              [tracked.lat, tracked.lon]
+            ];
+            if (!entry.connector) {
+              entry.connector = L.polyline(link, {
+                color: "#1e293b",
+                weight: 3,
+                opacity: 1,
+                dashArray: "8, 6",
+                interactive: false
+              }).addTo(layers.range);
+            } else if (!skipGeoUpdates) {
+              entry.connector.setLatLngs(link);
+              entry.connector.setStyle({
+                color: "#1e293b",
+                weight: 3,
+                opacity: 1,
+                dashArray: "8, 6"
+              });
+            }
+          } else if (entry.connector) {
+            layers.range.removeLayer(entry.connector);
+            entry.connector = null;
+          }
+
           const ps = bus.predictionState;
           const range = bus.uncertainty && routeCoordinates && ps
             ? rangeCoordinates(
@@ -352,7 +391,6 @@ export default function App() {
               )
             : null;
           if (range) {
-            const isFocus = focusId != null && bus.id === focusId;
             if (!entry.rangeLine) {
               entry.rangeLine = L.polyline(range, {
                 color: "#ea580c",
@@ -561,6 +599,7 @@ export default function App() {
           <p><span className="dot reported" /> Reported (stale BT GPS)</p>
           <p><span className="dot predicted" /> Predicted nowcast position</p>
           <p><span className="dot range" /> Uncertainty range (P80)</p>
+          <p><span className="dot connector" /> Selected: faded report + dashed link</p>
         </section>
         </div>
       </aside>
