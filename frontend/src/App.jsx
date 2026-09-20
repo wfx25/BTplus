@@ -159,14 +159,17 @@ export default function App() {
   const stateRef = useRef(null);
   const routeCacheRef = useRef(new Map());
   const replaySeekVersionRef = useRef(null);
+  const followPredictedRef = useRef(false);
 
   const isTrackingRef = useRef(false);
   const isFlyingRef = useRef(false);
 
   const [state, setState] = useState(null);
   const [selectedBusId, setSelectedBusId] = useState(null);
+  const [showAllPredictions, setShowAllPredictions] = useState(false);
   const [error, setError] = useState(null);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(true);
+  const showAllPredictionsRef = useRef(false);
 
   // === 控制设置项 ===
   const [routeAnimated, setRouteAnimated] = useState(false);
@@ -193,6 +196,12 @@ export default function App() {
   const [settingsCollapsed, setSettingsCollapsed] = useState(false);
 
   selectedBusIdRef.current = selectedBusId;
+  showAllPredictionsRef.current = showAllPredictions;
+
+  function predictionVisibleFor(busId) {
+    if (showAllPredictionsRef.current) return true;
+    return selectedBusIdRef.current != null && busId === selectedBusIdRef.current;
+  }
 
   useEffect(() => {
     if (mapRef.current) {
@@ -212,6 +221,8 @@ export default function App() {
   }
 
   function selectBus(bus) {
+    selectedBusIdRef.current = bus.id;
+    followPredictedRef.current = true;
     setSelectedBusId(bus.id);
     isTrackingRef.current = true;
     setIsTrackingUI(true);
@@ -251,7 +262,7 @@ export default function App() {
     if (!forceRedraw && tripId === loadedTripIdRef.current) return;
 
     cacheRoute(tripId).then((coordinates) => {
-      loadedTripIdRef.current = tripId;
+      loadedTripIdRef.current = routeKey;
       const routeLayer = layersRef.current?.route;
       if (!routeLayer) return;
       routeLayer.clearLayers();
@@ -307,6 +318,29 @@ export default function App() {
     mapRef.current = map;
     layersRef.current = { reported: reportedLayer, predicted: predictedLayer, range: rangeLayer, route: routeLayer };
     setTimeout(() => { map.invalidateSize(); }, 50);
+    map.on("dragstart", () => {
+      followPredictedRef.current = false;
+    });
+
+    function mapIsAnimating(mapInstance) {
+      if (!mapInstance) return false;
+      if (mapInstance._animatingZoom) return true;
+      return Boolean(mapInstance._panAnim && mapInstance._panAnim._inProgress);
+    }
+
+    function removePredictionLayers(entry, layers, busId) {
+      if (entry.predicted) {
+        layers.predicted.removeLayer(entry.predicted);
+        entry.predicted = null;
+      }
+      if (entry.rangeLine) {
+        layers.range.removeLayer(entry.rangeLine);
+        entry.rangeLine = null;
+      }
+      if (busId != null) {
+        predictedDisplayRef.current.delete(busId);
+      }
+    }
 
     function animatePredicted() {
       const snapshot = stateRef.current;
@@ -368,7 +402,6 @@ export default function App() {
 
             entry = { reported, predicted: predictedMarker, currentColor: desiredColor, currentBaseColor: busBaseColor };
             markersRef.current.set(bus.id, entry);
-            if (predicted) predictedDisplayRef.current.set(bus.id, { lat: predicted.latitude, lon: predicted.longitude });
           } else {
             if (entry.currentBaseColor !== busBaseColor) {
               entry.reported.setIcon(getReportedIcon(busBaseColor));
@@ -417,17 +450,11 @@ export default function App() {
               entry.predicted = null;
               predictedDisplayRef.current.delete(bus.id);
             }
+          } else if (entry.predicted) {
+            layers.predicted.removeLayer(entry.predicted);
+            entry.predicted = null;
+            predictedDisplayRef.current.delete(bus.id);
           }
-        }
-
-        for (const [id, entry] of markersRef.current) {
-          if (seen.has(id)) continue;
-          layers.reported.removeLayer(entry.reported);
-          if (entry.predicted) layers.predicted.removeLayer(entry.predicted);
-          if (entry.rangeLine) layers.range.removeLayer(entry.rangeLine);
-          markersRef.current.delete(id);
-          predictedDisplayRef.current.delete(id);
-        }
 
         for (const bus of buses) {
           let entry = markersRef.current.get(bus.id);
@@ -465,13 +492,32 @@ export default function App() {
                 lineCap: "round",
                 lineJoin: "round"
               }).addTo(layers.range);
-            } else {
+            } else if (!skipGeoUpdates) {
               entry.rangeLine.setLatLngs(range);
               entry.rangeLine.setStyle({ color: desiredColor });
             }
           } else if (entry.rangeLine) {
             layers.range.removeLayer(entry.rangeLine);
             entry.rangeLine = null;
+          }
+        }
+
+        for (const [id, entry] of markersRef.current) {
+          if (seen.has(id)) continue;
+          layers.reported.removeLayer(entry.reported);
+          removePredictionLayers(entry, layers, id);
+          markersRef.current.delete(id);
+        }
+
+        if (
+          followPredictedRef.current &&
+          !skipGeoUpdates &&
+          selectedBusIdRef.current &&
+          predictionVisibleFor(selectedBusIdRef.current)
+        ) {
+          const tracked = predictedDisplayRef.current.get(selectedBusIdRef.current);
+          if (tracked) {
+            mapInstance.panTo([tracked.lat, tracked.lon], { animate: false });
           }
         }
       }
@@ -497,7 +543,6 @@ export default function App() {
       setState(next);
       setError(null);
       for (const bus of next.buses || []) cacheRoute(bus.gtfsTripId);
-      if (!selectedBusIdRef.current && next.buses?.length > 0) selectBus(next.buses[0]);
     }
 
     fetch("/api/state")
