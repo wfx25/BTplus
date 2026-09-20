@@ -373,15 +373,8 @@ header .subtitle {
   border-top: 3px dashed #1e293b;
 }
 
-/* 移动端抽屉按钮 */
+/* 移动端抽屉按钮默认隐藏，完整规则放在文件末尾以免被桌面 .panel 盖掉 */
 .drawer-toggle { display: none; }
-@media (max-width: 768px) {
-  .app { flex-direction: column; }
-  .map { height: 45vh; }
-  .panel { width: 100%; height: 55vh; border-left: none; border-top: 2px solid #861F41; }
-  .map-settings-widget { bottom: 12px; left: 12px; padding: 8px 12px; }
-  .clear-selection { right: 0; bottom: calc(55vh + 10px); }
-}
 /* =========================================
    1. 彻底隐藏右下角地图制作组水印 / 声明
    ========================================= */
@@ -669,4 +662,83 @@ header .subtitle {
   background: #E87722;
   color: #ffffff;
   box-shadow: 0 2px 6px rgba(232, 119, 34, 0.4);
+}
+
+@media (max-width: 768px) {
+  .app {
+    flex-direction: column;
+  }
+
+  .map {
+    flex: 1 1 auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+  }
+
+  .panel,
+  .panel.collapsed {
+    width: 100% !important;
+    height: 42vh;
+    margin-right: 0 !important;
+    border-left: none;
+    border-top: 2px solid #861F41;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+  }
+
+  .panel:not(.panel-open) {
+    height: 52px;
+  }
+
+  .panel:not(.panel-open) .panel-content {
+    display: none;
+  }
+
+  .panel-dock-btn {
+    display: none;
+  }
+
+  .drawer-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    flex-shrink: 0;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
+    color: #e2e8f0;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 10px 12px;
+    cursor: pointer;
+  }
+
+  .drawer-grip {
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: #64748b;
+  }
+
+  .map-settings-widget {
+    top: 76px;
+    bottom: auto;
+    left: 12px;
+    right: auto;
+    max-width: min(280px, calc(100vw - 24px));
+    padding: 8px 12px;
+  }
+
+  .clear-selection {
+    left: 0;
+    right: 0;
+    bottom: calc(42vh + 10px);
+  }
+
+  .app:has(.panel:not(.panel-open)) .clear-selection {
+    bottom: 62px;
+  }
 }

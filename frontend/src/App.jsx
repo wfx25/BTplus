@@ -210,7 +210,7 @@ export default function App() {
         mapRef.current.invalidateSize();
       }, 360);
     }
-  }, [panelCollapsed]);
+  }, [panelCollapsed, mobilePanelOpen]);
 
   function toggleRouteAnimation(checked) {
     setRouteAnimated(checked);
@@ -615,6 +615,14 @@ export default function App() {
 
         {!settingsCollapsed && (
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={showAllPredictions}
+                onChange={(e) => setShowAllPredictions(e.target.checked)}
+              />
+              Show All Predictions
+            </label>
             <label>
               <input
                 type="checkbox"
