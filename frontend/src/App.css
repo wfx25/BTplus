@@ -1,238 +1,280 @@
-* { box-sizing: border-box; }
+/* =========================================
+   VTplus 官方主题：VT Maroon & Hokie Orange
+   ========================================= */
 
-html, body, #root, .app {
-  margin: 0;
-  height: 100%;
-  font-family: "Segoe UI", system-ui, sans-serif;
-  background: #101418;
-  color: #e8edf2;
+/* 1. 地图与整体框架 */
+.app {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0f172a;
 }
 
 .map {
-  position: absolute;
-  inset: 0;
+  flex: 1;
+  height: 100%;
+  z-index: 1;
 }
 
-.leaflet-container {
-  background: #d4d4d4;
-}
 
-.panel {
+/* 2. 独立出来的地图悬浮控制栏（左下角胶囊） */
+.map-settings-widget {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 320px;
-  max-height: calc(100% - 24px);
-  overflow: auto;
-  padding: 16px 18px 18px;
-  background: rgba(21, 27, 33, 0.94);
-  border: 1px solid #2a343e;
-  border-radius: 8px;
+  bottom: 24px;
+  left: 20px;
   z-index: 1000;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(232, 119, 34, 0.35); /* VT Hokie Orange 微光边框 */
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(232, 119, 34, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s ease;
 }
 
+.map-settings-widget:hover {
+  border-color: rgba(232, 119, 34, 0.6);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 20px rgba(232, 119, 34, 0.25);
+}
+
+.map-settings-title {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #E87722; /* Hokie Orange */
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.map-settings-widget label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  user-select: none;
+  font-weight: 500;
+}
+
+.map-settings-widget input[type="checkbox"] {
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  accent-color: #E87722; /* 复选框使用 VT 橙色 */
+}
+
+/* 3. 右侧现代化仪表盘面板 */
+.panel {
+  width: 380px;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(20px);
+  border-left: 2px solid #861F41; /* VT Chicago Maroon 枣红分界线 */
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  color: #f8fafc;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+}
+
+/* 定制枣红细滚动条 */
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panel-content::-webkit-scrollbar {
+  width: 5px;
+}
+.panel-content::-webkit-scrollbar-thumb {
+  background: rgba(134, 31, 65, 0.6); /* VT Maroon */
+  border-radius: 99px;
+}
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background: #861F41;
+}
+
+/* 头部 Title 设计 */
 header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-h1 {
+header h1 {
+  font-size: 1.4rem;
+  font-weight: 900;
   margin: 0;
-  font-size: 20px;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ffffff 40%, #E87722 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-h2 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #9aa8b5;
-}
-
-.subtitle {
-  margin: 4px 0 0;
-  color: #8b98a5;
-  font-size: 12px;
-}
-
-section {
-  margin-bottom: 18px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #24303a;
-}
-
-.badge {
-  font-size: 11px;
+header .subtitle {
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: #334155;
+  color: #94a3b8;
+  margin: 3px 0 0;
+  letter-spacing: 0.1em;
 }
 
-.badge.live { background: #14532d; color: #bbf7d0; }
-.badge.replay { background: #1e3a5f; color: #bfdbfe; }
+/* Live / Replay 徽章 */
+.badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 99px;
+  letter-spacing: 0.05em;
+}
+.badge.live {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+.badge.replay {
+  background: rgba(232, 119, 34, 0.18);
+  color: #E87722;
+  border: 1px solid rgba(232, 119, 34, 0.4);
+}
 
-.prediction-toggle {
+/* 4. 各功能模块卡片化 */
+.panel section {
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 12px 14px;
+  transition: border-color 0.2s;
+}
+.panel section:hover {
+  border-color: rgba(134, 31, 65, 0.4); /* 悬浮时微现 VT Maroon 边框 */
+}
+
+.panel h2 {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #E87722; /* Hokie Orange 小标题 */
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 10px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 16px;
-  padding: 8px 10px;
-  font-size: 13px;
-  color: #e8edf2;
-  background: #1b2430;
-  border: 1px solid #2a343e;
-  border-radius: 6px;
-  cursor: pointer;
+  gap: 6px;
 }
-
-.prediction-toggle input {
-  margin: 0;
-  accent-color: #ea580c;
-}
-
-.prediction-toggle-hint {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  color: #9aa8b5;
-  font-weight: 400;
-}
-
-.route-swatch {
+.panel h2::before {
+  content: "";
   display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 6px;
+  width: 3px;
+  height: 11px;
+  background: #861F41; /* 标题前置 VT Maroon 标识条 */
   border-radius: 2px;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  vertical-align: middle;
 }
 
+/* 键值对网格 (Selected Bus) */
 .kv {
   display: grid;
-  grid-template-columns: 118px 1fr;
-  gap: 6px 8px;
-  font-size: 13px;
+  grid-template-columns: 90px 1fr;
+  row-gap: 7px;
+  font-size: 0.82rem;
+  align-items: center;
+}
+.kv span:nth-child(odd) {
+  color: #94a3b8;
+  font-weight: 500;
+}
+.kv span:nth-child(even) {
+  color: #f1f5f9;
+  font-weight: 600;
 }
 
-.kv span:nth-child(odd) { color: #8b98a5; }
-
-.fresh-fresh { color: #86efac; }
-.fresh-recent { color: #fde68a; }
-.fresh-stale { color: #fca5a5; }
-
-.note, .legend p {
-  font-size: 12px;
-  color: #9aa8b5;
-  line-height: 1.45;
+/* 数据新鲜度 Badge */
+.fresh-fresh {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+  padding: 1px 7px;
+  border-radius: 4px;
+  width: max-content;
+}
+.fresh-recent {
+  color: #eab308;
+  background: rgba(234, 179, 8, 0.15);
+  padding: 1px 7px;
+  border-radius: 4px;
+  width: max-content;
+}
+.fresh-stale {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+  padding: 1px 7px;
+  border-radius: 4px;
+  width: max-content;
+  animation: flash-red 1.5s infinite;
 }
 
-.dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-right: 6px;
-  vertical-align: middle;
-}
-
-.dot.reported {
-  background: transparent;
-  box-shadow: inset 0 0 0 2px #f8fafc;
-}
-
-.dot.predicted { background: #f97316; }
-
-.dot.range {
-  background: rgba(251, 146, 60, 0.45);
-  box-shadow: inset 0 0 0 1px #ea580c;
-}
-
-.marker-reported {
-  width: 18px;
-  height: 18px;
-  border: 3px solid #0f172a;
-  border-radius: 50%;
-  background: #94a3b8;
-  box-shadow: 0 0 0 2px #fff;
-}
-
-.marker-predicted {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #f97316;
-  border: 3px solid #fff;
-  box-shadow: 0 0 0 2px #9a3412;
-}
-
+/* 统计行 (Validation) */
 .stat-row {
-  font-size: 13px;
-  margin: 4px 0;
-}
-
-.model7-validation {
-  border-left: 3px solid #22c55e;
-  padding-left: 10px;
-}
-
-.model7-result {
-  color: #86efac;
-  font-weight: 700;
-}
-
-.moving-only {
-  margin-top: 8px;
-  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  padding: 3px 0;
   color: #cbd5e1;
-  line-height: 1.45;
+}
+.stat-row strong {
+  color: #94a3b8;
 }
 
-.model7-status {
-  color: #86efac;
+/* Model 7 专属高亮框 */
+.model7-result {
+  background: rgba(34, 197, 94, 0.1);
+  padding: 5px 8px;
+  border-radius: 6px;
+  border-left: 3px solid #22c55e;
+  margin: 5px 0;
 }
 
-@media (max-width: 800px) {
-  .panel {
-    top: auto;
-    right: 8px;
-    left: 8px;
-    bottom: 8px;
-    width: auto;
-    max-height: 40%;
-  }
+.note {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin: 6px 0 0;
+  line-height: 1.35;
 }
-/* =========================================
-   BT+ 视觉特效：Marker 动画与光环
-   ========================================= */
 
-/* 1. 静态的 Reported Marker (官方旧数据：黑白圆圈) */
+/* 5. 动效与标记 */
 .marker-reported {
   width: 14px;
   height: 14px;
   border: 3px solid #1e293b;
   border-radius: 50%;
-  box-shadow: 0 0 4px rgba(0,0,0,0.4);
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
   transition: all 0.3s ease;
 }
 
-/* 2. 动态的 Predicted Marker (我们的预测：科技橙色 + 呼吸灯) */
 .marker-predicted {
   width: 18px;
   height: 18px;
-  background-color: #ea580c;
+  background-color: var(--route-color, #E87722);
   border: 3px solid #ffffff;
   border-radius: 50%;
-  box-shadow: 0 0 10px rgba(234, 88, 12, 0.8);
+  box-shadow: 0 0 12px var(--route-color, rgba(232, 119, 34, 0.8));
   position: relative;
 }
 
-/* 3. 雷达脉冲扩散动画 (Pulse Effect) */
 .marker-predicted::after {
   content: "";
   position: absolute;
@@ -240,7 +282,7 @@ section {
   left: 50%;
   width: 100%;
   height: 100%;
-  background-color: #ea580c;
+  background-color: var(--route-color, #E87722);
   border-radius: 50%;
   transform: translate(-50%, -50%);
   z-index: -1;
@@ -248,155 +290,335 @@ section {
 }
 
 @keyframes radar-pulse {
-  0% {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 0.8;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(3.5);
-    opacity: 0;
-  }
-}
-/* 1. 数据新鲜度 Badge (红绿灯) */
-.fresh-fresh, .fresh-recent, .fresh-stale {
-  width: max-content; /* 加上这句：让背景紧贴着文字，不再被拉长 */
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+  100% { transform: translate(-50%, -50%) scale(3.2); opacity: 0; }
 }
 
-.fresh-fresh {
-  color: #22c55e;
-  font-weight: 700;
-  background: rgba(34, 197, 94, 0.15);
-  padding: 2px 8px;
-  border-radius: 4px;
+/* 路线流动行军蚁 (GPU加速) */
+.route-marching-ants {
+  stroke-dasharray: 12, 12;
+  animation: march-ants 1s linear infinite;
+  will-change: stroke-dashoffset;
+  transform: translateZ(0);
 }
 
-.fresh-recent {
-  color: #eab308;
-  font-weight: 700;
-  background: rgba(234, 179, 8, 0.15);
-  padding: 2px 8px;
-  border-radius: 4px;
+@keyframes march-ants {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
 }
 
-.fresh-stale {
-  color: #ef4444;
-  font-weight: 700;
-  background: rgba(239, 68, 68, 0.15);
-  padding: 2px 8px;
-  border-radius: 4px;
-  animation: flash-red 1.5s infinite;
-}
-
-@keyframes flash-red {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-/* 2. 验证面板的战绩高亮 */
-.stat-row strong {
-  color: #94a3b8;
-  display: inline-block;
-  width: 150px;
-}
-
-/* 修复绿框：直接强制选中第四行 */
-section:nth-of-type(3) .stat-row:nth-of-type(4) {
-  background: rgba(34, 197, 94, 0.1);
-  padding: 6px;
-  border-radius: 6px;
-  border-left: 4px solid #22c55e;
-  margin: 8px 0;
-}
-
-.replay-controls {
-  margin-bottom: 18px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #24303a;
-}
-
-.replay-title-row,
-.replay-times,
-.replay-actions {
+/* 图例 */
+.legend p {
   display: flex;
   align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin: 5px 0;
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot.reported { background: #64748b; border: 2px solid #1e293b; }
+.dot.predicted { background: #E87722; border: 2px solid #ffffff; }
+.dot.range { width: 16px; height: 5px; border-radius: 3px; background: #861F41; }
+
+/* 移动端抽屉按钮 */
+.drawer-toggle { display: none; }
+@media (max-width: 768px) {
+  .app { flex-direction: column; }
+  .map { height: 45vh; }
+  .panel { width: 100%; height: 55vh; border-left: none; border-top: 2px solid #861F41; }
+  .map-settings-widget { bottom: 12px; left: 12px; padding: 8px 12px; }
+}
+/* =========================================
+   1. 彻底隐藏右下角地图制作组水印 / 声明
+   ========================================= */
+.leaflet-control-attribution {
+  display: none !important;
+}
+
+/* =========================================
+   2. 侧边栏平滑折叠抽屉与停靠按钮
+   ========================================= */
+.panel {
+  position: relative;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), margin-right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* =========================================
+   侧边栏平滑折叠抽屉与永不丢失的边缘把手
+   ========================================= */
+.panel {
+  width: 380px;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(20px);
+  border-left: 2px solid #861F41; /* VT Maroon */
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  color: #f8fafc;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  position: relative;
+  /* 仅使用 margin-right 实现平滑伸缩，彻底杜绝按钮飞出屏幕 */
+  transition: margin-right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 折叠状态：只收起宽度，刚好把小把手卡在屏幕最右边缘 */
+.panel.collapsed {
+  margin-right: -380px;
+}
+
+/* 镶嵌在屏幕右边缘的永不丢失折叠把手 */
+.panel-dock-btn {
+  position: absolute;
+  left: -36px; /* 露出一半把手在地图上 */
+  top: 24px;
+  width: 36px;
+  height: 46px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid #861F41; /* VT Maroon 边框 */
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  color: #E87722; /* Hokie Orange */
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1002;
+  box-shadow: -6px 0 16px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  transition: all 0.2s ease;
+}
+
+.panel-dock-btn:hover {
+  background: #861F41;
+  color: #ffffff;
+  width: 40px;
+  left: -40px; /* 鼠标放上去稍微向左伸出，提示可点击 */
+}
+
+/* =========================================
+   3. Map Settings 折叠胶囊微调
+   ========================================= */
+.map-settings-header {
+  display: flex;
   justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.widget-toggle-btn {
+  background: transparent;
+  border: none;
+  color: #E87722;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+  margin-left: 10px;
+}
+/* =========================================
+   现代流媒体级回放播放器 (Replay Player)
+   ========================================= */
+.replay-player-card {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.85) 100%) !important;
+  border: 1px solid rgba(232, 119, 34, 0.3) !important;
+  border-radius: 12px !important;
+  padding: 14px 16px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.replay-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.replay-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.replay-title-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #E87722;
+  box-shadow: 0 0 8px #E87722;
+}
+
+.replay-title-text {
+  font-size: 0.85rem !important;
+  font-weight: 800 !important;
+  color: #f1f5f9 !important;
+  margin: 0 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.replay-title-text::before {
+  display: none !important;
+}
+
+.replay-date-pill {
+  font-size: 0.72rem;
+  color: #f59e0b;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.15);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.replay-pct-badge {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #E87722;
+  background: rgba(232, 119, 34, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 进度条美化 */
+.replay-scrubber-box {
+  width: 100%;
+  margin: 4px 0 8px;
+}
+
+.modern-replay-slider {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modern-replay-slider:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.modern-replay-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #E87722;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px rgba(232, 119, 34, 0.9);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.modern-replay-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+}
+
+/* 三栏时间显示 */
+.replay-time-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.time-bound {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.time-current-glow {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #38bdf8;
+  font-family: monospace;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 2px 10px;
+  border-radius: 6px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+/* 控制按钮与倍速组 */
+.replay-control-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 10px;
 }
 
-.replay-title-row h2 { margin: 0; }
-.replay-title-row span,
-.replay-times { color: #9aa8b5; font-size: 11px; }
-.replay-times { margin-top: 3px; }
-.replay-times strong { color: #e8edf2; font-weight: 600; }
-
-.replay-slider {
-  width: 100%;
-  margin: 10px 0 0;
-  accent-color: #f97316;
+.replay-btn-toggle {
+  flex: 1;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.82rem;
+  font-weight: 800;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
 }
 
-.replay-actions { justify-content: flex-start; margin-top: 12px; }
-.replay-actions button,
-.replay-actions select {
-  border: 1px solid #3a4854;
+.btn-play {
+  background: linear-gradient(135deg, #E87722 0%, #ea580c 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(232, 119, 34, 0.4);
+}
+.btn-play:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-pause {
+  background: rgba(134, 31, 65, 0.85); /* VT Maroon */
+  color: #ffffff;
+  border: 1px solid rgba(134, 31, 65, 0.5);
+  box-shadow: 0 2px 10px rgba(134, 31, 65, 0.3);
+}
+.btn-pause:hover {
+  background: #861F41;
+}
+
+.replay-speed-selector {
+  display: flex;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.speed-pill {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
   border-radius: 5px;
-  background: #1c2730;
-  color: #e8edf2;
-  font: inherit;
-  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
-.replay-actions button { min-width: 64px; padding: 6px 10px; cursor: pointer; }
-.replay-actions label { display: flex; align-items: center; gap: 6px; color: #9aa8b5; font-size: 12px; }
-.replay-actions select { padding: 5px 7px; }
-.replay-actions button:disabled,
-.replay-actions select:disabled,
-.replay-slider:disabled { cursor: wait; opacity: 0.55; }
-.replay-error { margin: 8px 0 0; color: #fca5a5; font-size: 12px; }
 
-.drawer-toggle { display: none; }
+.speed-pill:hover {
+  color: #ffffff;
+}
 
-@media (max-width: 800px) {
-  .panel {
-    top: auto;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    width: auto;
-    max-height: min(76vh, 650px);
-    padding: 10px 16px 20px;
-    border-radius: 18px 18px 0 0;
-    border-bottom: 0;
-    transform: translateY(calc(100% - 60px));
-    transition: transform 220ms ease-out;
-    overflow: auto;
-  }
-
-  .panel.panel-open { transform: translateY(0); }
-
-  .drawer-toggle {
-    display: flex;
-    width: 100%;
-    min-height: 42px;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    margin: -4px 0 5px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: #cbd5e1;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .drawer-grip {
-    width: 34px;
-    height: 4px;
-    border-radius: 999px;
-    background: #64748b;
-  }
-
-  .panel-content { padding-bottom: 8px; }
+.speed-pill.speed-active {
+  background: #E87722;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(232, 119, 34, 0.4);
 }

@@ -21,7 +21,6 @@ const MOCK_UCB_COORDINATES = [
   [-80.4185, 37.2295], [-80.4205, 37.2285], [-80.4228, 37.2286]
 ];
 
-// 核心修复：精准计算实际路线的总公里数，彻底杜绝瞬移！
 function calculateTrueRouteLengthKm(coords) {
   const toRad = Math.PI / 180;
   let totalKm = 0;
@@ -38,7 +37,6 @@ function calculateTrueRouteLengthKm(coords) {
 
 const EXACT_ROUTE_LENGTH = calculateTrueRouteLengthKm(MOCK_UCB_COORDINATES);
 
-// === 模拟数据：两辆车运动 ===
 function createMockState() {
   const now = Date.now();
   return {
@@ -50,15 +48,7 @@ function createMockState() {
         generatedAt: now, dataAge: 24.8, freshness: "recent", predictionHorizonSeconds: 24.8,
         reported: { latitude: 37.2302, longitude: -80.4180 },
         predicted: { latitude: 37.2345, longitude: -80.4225 },
-        predictionState: {
-          modelType: "route_constant_velocity",
-          modelMode: "moving",
-          startProgressKm: 0.65,
-          routeLengthKm: EXACT_ROUTE_LENGTH, // 使用真实精准全长！
-          speedMetersPerSecond: 8.5,
-          initialElapsedSeconds: 24.8,
-          loop: true
-        },
+        predictionState: { modelType: "route_constant_velocity", modelMode: "moving", startProgressKm: 0.65, routeLengthKm: EXACT_ROUTE_LENGTH, speedMetersPerSecond: 8.5, initialElapsedSeconds: 24.8, loop: true },
         uncertainty: { p80Meters: 70, label: "P80 confidence window (BT data 24.8s stale)" }
       },
       {
@@ -66,15 +56,7 @@ function createMockState() {
         generatedAt: now, dataAge: 12.2, freshness: "fresh", predictionHorizonSeconds: 12.2,
         reported: { latitude: 37.2388, longitude: -80.4332 },
         predicted: { latitude: 37.2410, longitude: -80.4339 },
-        predictionState: {
-          modelType: "route_constant_velocity",
-          modelMode: "moving",
-          startProgressKm: 2.2,
-          routeLengthKm: EXACT_ROUTE_LENGTH, // 使用真实精准全长！
-          speedMetersPerSecond: 10.0,
-          initialElapsedSeconds: 12.2,
-          loop: true
-        },
+        predictionState: { modelType: "route_constant_velocity", modelMode: "moving", startProgressKm: 2.2, routeLengthKm: EXACT_ROUTE_LENGTH, speedMetersPerSecond: 10.0, initialElapsedSeconds: 12.2, loop: true },
         uncertainty: { p80Meters: 35, label: "P80 confidence window (BT data 12.2s fresh)" }
       }
     ],
@@ -87,23 +69,49 @@ function createMockState() {
   };
 }
 
-const predictedIcon = L.divIcon({ className: "", html: '<div class="marker-predicted"></div>', iconSize: [22, 22], iconAnchor: [11, 11] });
-const DEFAULT_ROUTE_COLOR = "#94a3b8";
+// === BT 官方 GTFS 权威全量路线配色表 (来自官方 routes.txt) ===
+const BT_ROUTE_COLORS = {
+  HWA: "#1A4882", HWB: "#0098D4", HWC: "#7156A5", HWS: "#7156A5",
+  TCR: "#EE7C0E", TCP: "#EE7C0E", TOM: "#EE7C0E",
+  TTH: "#87012D", TTS: "#EE7C0E", TTT: "#EE7C0E",
+  HXP: "#00A4A7", HXS: "#00A4A7",
+  PHD: "#FF69B4", PHB: "#00782A",
+  SMA: "#84B817", SME: "#0098D4", SMS: "#0098D4",
+  UCB: "#84B817", CAS: "#302F2F", CRC: "#00782A", CRB: "#E32017",
+  NMG: "#E32017", NMS: "#E32017", PRG: "#7156A5", HDG: "#874901",
+  BMR: "#FF69B4", BMW: "#FF69B4", BLU: "#0000FF", GRN: "#84B817"
+};
 
-function routeFill(bus) {
-  return bus?.routeColor || DEFAULT_ROUTE_COLOR;
+function getRouteColor(routeId, backendColor) {
+  if (backendColor) return backendColor;
+  if (!routeId) return "#E87722";
+  const id = routeId.toUpperCase();
+  if (BT_ROUTE_COLORS[id]) return BT_ROUTE_COLORS[id];
+  const fallbackPalette = ["#06B6D4", "#8B5CF6", "#F59E0B", "#10B981", "#EC4899", "#3B82F6", "#F97316"];
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  return fallbackPalette[Math.abs(hash) % fallbackPalette.length];
 }
 
-function createReportedIcon(color) {
-  const fill = color || DEFAULT_ROUTE_COLOR;
+function getReportedIcon(color) {
   return L.divIcon({
     className: "",
-    html: `<div class="marker-reported" style="background-color:${fill}"></div>`,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9]
+    html: `<div class="marker-reported" style="background-color: ${color};"></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7]
   });
 }
 
+function getPredictedIcon(color) {
+  return L.divIcon({
+    className: "",
+    html: `<div class="marker-predicted" style="--route-color: ${color};"></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+}
+
+// === Tom 移植：Stadia Maps Alidade Smooth 顶级雅致底图生成器 ===
 function createBasemapLayer() {
   const cartoKey = import.meta.env.VITE_CARTO_KEY;
   if (cartoKey) {
@@ -153,12 +161,39 @@ export default function App() {
   const replaySeekVersionRef = useRef(null);
   const followPredictedRef = useRef(false);
 
+  const isTrackingRef = useRef(false);
+  const isFlyingRef = useRef(false);
+
   const [state, setState] = useState(null);
   const [selectedBusId, setSelectedBusId] = useState(null);
   const [showAllPredictions, setShowAllPredictions] = useState(false);
   const [error, setError] = useState(null);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(true);
   const showAllPredictionsRef = useRef(false);
+
+  // === 控制设置项 ===
+  const [routeAnimated, setRouteAnimated] = useState(false);
+  const routeAnimatedRef = useRef(false);
+  const [isTrackingUI, setIsTrackingUI] = useState(false);
+  
+  const [useRouteColor, setUseRouteColor] = useState(true);
+  const useRouteColorRef = useRef(true);
+
+  const [useRouteLineColor, setUseRouteLineColor] = useState(false);
+  const useRouteLineColorRef = useRef(false);
+
+  function toggleRouteLineColor(checked) {
+    setUseRouteLineColor(checked);
+    useRouteLineColorRef.current = checked;
+    if (selectedBusIdRef.current && stateRef.current) {
+      const bus = stateRef.current.buses.find((b) => b.id === selectedBusIdRef.current);
+      if (bus) loadRoute(bus.gtfsTripId, true);
+    }
+  }
+
+  // === 控制折叠状态 ===
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [settingsCollapsed, setSettingsCollapsed] = useState(false);
 
   selectedBusIdRef.current = selectedBusId;
   showAllPredictionsRef.current = showAllPredictions;
@@ -168,11 +203,41 @@ export default function App() {
     return selectedBusIdRef.current != null && busId === selectedBusIdRef.current;
   }
 
+  useEffect(() => {
+    if (mapRef.current) {
+      setTimeout(() => {
+        mapRef.current.invalidateSize();
+      }, 360);
+    }
+  }, [panelCollapsed]);
+
+  function toggleRouteAnimation(checked) {
+    setRouteAnimated(checked);
+    routeAnimatedRef.current = checked;
+    if (selectedBusIdRef.current && stateRef.current) {
+      const bus = stateRef.current.buses.find((b) => b.id === selectedBusIdRef.current);
+      if (bus) loadRoute(bus.gtfsTripId, true);
+    }
+  }
+
   function selectBus(bus) {
     selectedBusIdRef.current = bus.id;
     followPredictedRef.current = true;
     setSelectedBusId(bus.id);
-    loadRoute(bus.gtfsTripId, bus.routeColor);
+    isTrackingRef.current = true;
+    setIsTrackingUI(true);
+
+    loadRoute(bus.gtfsTripId);
+    const map = mapRef.current;
+    const target = bus.predicted || bus.reported;
+
+    if (map && target) {
+      isFlyingRef.current = true;
+      map.flyTo([target.latitude, target.longitude], Math.max(map.getZoom(), 16), { duration: 0.45 });
+      map.once("moveend", () => {
+        isFlyingRef.current = false;
+      });
+    }
   }
 
   function cacheRoute(tripId) {
@@ -192,10 +257,10 @@ export default function App() {
       });
   }
 
-  function loadRoute(tripId, color) {
+  function loadRoute(tripId, forceRedraw = false) {
     if (!tripId) return;
-    const routeKey = `${tripId}|${color || ""}`;
-    if (routeKey === loadedTripIdRef.current) return;
+    if (!forceRedraw && tripId === loadedTripIdRef.current) return;
+
     cacheRoute(tripId).then((coordinates) => {
       loadedTripIdRef.current = routeKey;
       const routeLayer = layersRef.current?.route;
@@ -203,11 +268,20 @@ export default function App() {
       routeLayer.clearLayers();
       if (!coordinates || coordinates.length < 2) return;
       const latlngs = coordinates.map((coord) => [coord[1], coord[0]]);
+
+      let dynamicColor = "#861F41"; // 默认 VT Maroon 枣红
+      if (useRouteLineColorRef.current && stateRef.current && selectedBusIdRef.current) {
+        const selectedBus = stateRef.current.buses.find((b) => b.id === selectedBusIdRef.current);
+        if (selectedBus) {
+          dynamicColor = getRouteColor(selectedBus.routeId, selectedBus.routeColor);
+        }
+      }
+
       L.polyline(latlngs, {
-        color: color || DEFAULT_ROUTE_COLOR,
-        weight: 3,
-        opacity: 0.75,
-        dashArray: "4, 6"
+        color: dynamicColor,
+        weight: 4,
+        opacity: 0.85,
+        className: routeAnimatedRef.current ? "route-marching-ants" : ""
       }).addTo(routeLayer);
     });
   }
@@ -223,6 +297,17 @@ export default function App() {
       maxBoundsViscosity: 1.0
     }).setView([37.230, -80.424], 14);
 
+    const breakFollow = () => {
+      if (isTrackingRef.current) {
+        isTrackingRef.current = false;
+        setIsTrackingUI(false);
+      }
+    };
+    map.on("mousedown dragstart", breakFollow);
+    map.getContainer().addEventListener("wheel", breakFollow);
+    map.getContainer().addEventListener("touchstart", breakFollow);
+
+    // 采用 Tom 的高级底图图层生成器！
     createBasemapLayer().addTo(map);
 
     const rangeLayer = L.layerGroup().addTo(map);
@@ -261,7 +346,11 @@ export default function App() {
       const snapshot = stateRef.current;
       const layers = layersRef.current;
       const mapInstance = mapRef.current;
-      const skipGeoUpdates = mapIsAnimating(mapInstance);
+
+      if (mapInstance && (mapInstance._animatingZoom || isFlyingRef.current)) {
+        rafRef.current = requestAnimationFrame(animatePredicted);
+        return;
+      }
 
       if (snapshot && layers) {
         const replay = snapshot.sourceMode === "replay" ? snapshot.replay : null;
@@ -287,42 +376,53 @@ export default function App() {
         for (const bus of buses) {
           seen.add(bus.id);
           const routeCoordinates = routeCacheRef.current.get(bus.gtfsTripId);
-          const predictionVisible = predictionVisibleFor(bus.id);
-          const fill = routeFill(bus);
+          let predicted = visualPredictedPosition(bus, routeCoordinates, animationNow);
+
+          if (focusId != null && bus.id !== focusId) {
+            predicted = null;
+          }
+
+          const busBaseColor = getRouteColor(bus.routeId, bus.routeColor);
+          const desiredColor = useRouteColorRef.current ? busBaseColor : "#E87722";
+
           let entry = markersRef.current.get(bus.id);
           if (!entry) {
             const reported = L.marker([bus.reported.latitude, bus.reported.longitude], {
-              icon: createReportedIcon(fill),
+              icon: getReportedIcon(busBaseColor),
               zIndexOffset: 200
             }).addTo(layers.reported);
             reported.on("click", () => selectBus(bus));
-            entry = { reported, predicted: null, rangeLine: null, routeColor: fill };
+            const predictedMarker = predicted
+              ? L.marker([predicted.latitude, predicted.longitude], {
+                  icon: getPredictedIcon(desiredColor),
+                  zIndexOffset: 300
+                }).addTo(layers.predicted)
+              : null;
+            if (predictedMarker) predictedMarker.on("click", () => selectBus(bus));
+
+            entry = { reported, predicted: predictedMarker, currentColor: desiredColor, currentBaseColor: busBaseColor };
             markersRef.current.set(bus.id, entry);
           } else {
-            if (entry.routeColor !== fill) {
-              entry.reported.setIcon(createReportedIcon(fill));
-              entry.routeColor = fill;
+            if (entry.currentBaseColor !== busBaseColor) {
+              entry.reported.setIcon(getReportedIcon(busBaseColor));
+              entry.currentBaseColor = busBaseColor;
             }
-            if (!skipGeoUpdates) {
-              entry.reported.setLatLng([bus.reported.latitude, bus.reported.longitude]);
-            }
-            entry.reported.off("click"); entry.reported.on("click", () => selectBus(bus));
-          }
-
-          if (!predictionVisible) {
-            removePredictionLayers(entry, layers, bus.id);
-            continue;
-          }
-
-          const predicted = visualPredictedPosition(bus, routeCoordinates, animationNow);
-          if (predicted) {
-            if (!entry.predicted) {
-              entry.predicted = L.marker([predicted.latitude, predicted.longitude], { icon: predictedIcon, zIndexOffset: 300 }).addTo(layers.predicted);
-              predictedDisplayRef.current.set(bus.id, { lat: predicted.latitude, lon: predicted.longitude });
-            }
-            entry.predicted.off("click");
-            entry.predicted.on("click", () => selectBus(bus));
-            if (!skipGeoUpdates) {
+            entry.reported.setLatLng([bus.reported.latitude, bus.reported.longitude]);
+            entry.reported.off("click");
+            entry.reported.on("click", () => selectBus(bus));
+            if (predicted) {
+              if (!entry.predicted) {
+                entry.predicted = L.marker([predicted.latitude, predicted.longitude], {
+                  icon: getPredictedIcon(desiredColor),
+                  zIndexOffset: 300
+                }).addTo(layers.predicted);
+                entry.currentColor = desiredColor;
+              } else if (entry.currentColor !== desiredColor) {
+                entry.predicted.setIcon(getPredictedIcon(desiredColor));
+                entry.currentColor = desiredColor;
+              }
+              entry.predicted.off("click");
+              entry.predicted.on("click", () => selectBus(bus));
               const current = predictedDisplayRef.current.get(bus.id) || { lat: predicted.latitude, lon: predicted.longitude };
               if (seekedWhilePaused) {
                 current.lat = predicted.latitude;
@@ -333,6 +433,22 @@ export default function App() {
               }
               predictedDisplayRef.current.set(bus.id, current);
               entry.predicted.setLatLng([current.lat, current.lon]);
+
+              if (isTrackingRef.current && bus.id === focusId && !isFlyingRef.current) {
+                const nowMs = Date.now();
+                if (nowMs - (mapInstance._lastPanTime || 0) > 1000) {
+                  mapInstance.panTo([current.lat, current.lon], {
+                    animate: true,
+                    duration: 1.0,
+                    easeLinearity: 0.25
+                  });
+                  mapInstance._lastPanTime = nowMs;
+                }
+              }
+            } else if (entry.predicted) {
+              layers.predicted.removeLayer(entry.predicted);
+              entry.predicted = null;
+              predictedDisplayRef.current.delete(bus.id);
             }
           } else if (entry.predicted) {
             layers.predicted.removeLayer(entry.predicted);
@@ -340,32 +456,45 @@ export default function App() {
             predictedDisplayRef.current.delete(bus.id);
           }
 
+        for (const bus of buses) {
+          let entry = markersRef.current.get(bus.id);
+          if (!entry) continue;
+
+          if (focusId == null || bus.id !== focusId) {
+            if (entry.rangeLine) {
+              layers.range.removeLayer(entry.rangeLine);
+              entry.rangeLine = null;
+            }
+            continue;
+          }
+
           const ps = bus.predictionState;
-          const range = bus.uncertainty && routeCoordinates && ps
-            ? rangeCoordinates(
-                routeCoordinates,
-                progressFromState(ps, bus.generatedAt, animationNow),
-                bus.uncertainty.p80Meters,
-                ps.routeLengthKm,
-                ps.loop
-              )
-            : null;
+          const routeCoordinates = routeCacheRef.current.get(bus.gtfsTripId);
+          if (!bus.uncertainty || !routeCoordinates || !ps) {
+            if (entry.rangeLine) {
+              layers.range.removeLayer(entry.rangeLine);
+              entry.rangeLine = null;
+            }
+            continue;
+          }
+
+          const progressKm = progressFromState(ps, bus.generatedAt, animationNow);
+          const range = rangeCoordinates(routeCoordinates, progressKm, bus.uncertainty.p80Meters, ps.routeLengthKm, ps.loop);
+          const busBaseColor = getRouteColor(bus.routeId, bus.routeColor);
+          const desiredColor = useRouteColorRef.current ? busBaseColor : "#E87722";
+
           if (range) {
-            const isFocus = focusId != null && bus.id === focusId;
             if (!entry.rangeLine) {
               entry.rangeLine = L.polyline(range, {
-                color: "#ea580c",
-                weight: isFocus ? 14 : 8,
-                opacity: isFocus ? 0.65 : 0.35,
+                color: desiredColor,
+                weight: 12,
+                opacity: 0.65,
                 lineCap: "round",
                 lineJoin: "round"
               }).addTo(layers.range);
             } else if (!skipGeoUpdates) {
               entry.rangeLine.setLatLngs(range);
-              entry.rangeLine.setStyle({
-                weight: isFocus ? 14 : 8,
-                opacity: isFocus ? 0.65 : 0.35
-              });
+              entry.rangeLine.setStyle({ color: desiredColor });
             }
           } else if (entry.rangeLine) {
             layers.range.removeLayer(entry.rangeLine);
@@ -435,8 +564,76 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* 1. 地图区域 */}
       <div ref={mapNodeRef} className="map" />
-      <aside className={`panel ${mobilePanelOpen ? "panel-open" : ""}`}>
+
+      {/* 2. 可折叠的地图悬浮控制胶囊 (左下角) */}
+      <div className="map-settings-widget">
+        <div
+          className="map-settings-header"
+          onClick={() => setSettingsCollapsed(!settingsCollapsed)}
+        >
+          <div className="map-settings-title">⚙️ Map Controls</div>
+          <button className="widget-toggle-btn" type="button">
+            {settingsCollapsed ? "▲" : "▼"}
+          </button>
+        </div>
+
+        {!settingsCollapsed && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={isTrackingUI}
+                onChange={(e) => {
+                  setIsTrackingUI(e.target.checked);
+                  isTrackingRef.current = e.target.checked;
+                }}
+              />
+              Follow Bus (Camera Lock)
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={routeAnimated}
+                onChange={(e) => toggleRouteAnimation(e.target.checked)}
+              />
+              Animate Route Flow
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={useRouteColor}
+                onChange={(e) => {
+                  setUseRouteColor(e.target.checked);
+                  useRouteColorRef.current = e.target.checked;
+                }}
+              />
+              Route-Specific Prediction
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={useRouteLineColor}
+                onChange={(e) => toggleRouteLineColor(e.target.checked)}
+              />
+              Route-Specific Route Line
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* 3. 具备一键平滑收起/展开功能的现代科技感侧边栏 */}
+      <aside className={`panel ${panelCollapsed ? "collapsed" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}>
+        <button
+          className="panel-dock-btn"
+          type="button"
+          onClick={() => setPanelCollapsed(!panelCollapsed)}
+          title={panelCollapsed ? "Expand Dashboard" : "Collapse Dashboard"}
+        >
+          {panelCollapsed ? "◀" : "▶"}
+        </button>
+
         <button
           className="drawer-toggle"
           type="button"
@@ -446,121 +643,192 @@ export default function App() {
           <span aria-hidden="true" className="drawer-grip" />
           {mobilePanelOpen ? "Hide details" : "Show details"}
         </button>
+
         <div className="panel-content">
-        <header>
-          <div>
-            <h1>BT+ Nowcast</h1>
-            <p className="subtitle">TRUST → PREDICT → VERIFY</p>
-          </div>
-          <div className={`badge ${sourceMode === "replay" ? "replay" : "live"}`}>
-            {sourceMode === "replay" ? "REPLAY" : sourceMode === "live" ? "LIVE" : "SIMULATION"}
-            {state?.recording ? " · REC" : ""}
-          </div>
-        </header>
-
-        {error && <section><p className="note">Backend: {error}. Start with BT_RECORD=false.</p></section>}
-
-        {sourceMode === "replay" && (
-          <ReplayControls replay={state?.replay} stateTimestamp={state?.timestamp} />
-        )}
-
-        <label className="prediction-toggle">
-          <input
-            type="checkbox"
-            checked={showAllPredictions}
-            onChange={(event) => setShowAllPredictions(event.target.checked)}
-          />
-          <span>
-            Show All Predictions
-            <span className="prediction-toggle-hint">Off: selected bus only</span>
-          </span>
-        </label>
-
-        <section>
-          <h2>Selected bus</h2>
-          {selected ? (
-            <div className="kv">
-              <span>Bus ID</span><span>{selected.id}</span>
-              <span>Route</span>
-              <span>
-                <span
-                  className="route-swatch"
-                  style={{ background: selected.routeColor || DEFAULT_ROUTE_COLOR }}
-                />
-                {selected.routeId}
-              </span>
-              <span>Data age</span>
-              <span>{((selected.predictionState ? (selected.predictionState.initialElapsedSeconds || 0) + Math.max(0, (Date.now() - (selected.generatedAt || Date.now())) / 1000) : selected.dataAge)).toFixed(1)} s</span>
-              <span>Freshness</span><span className={freshnessClass(selected.freshness)}>{selected.freshness.toUpperCase()}</span>
-              <span>Horizon</span><span>{(selected.predicted?.predictionHorizonSeconds ?? selected.predictionHorizonSeconds).toFixed(1)} s</span>
-              <span>Most likely</span><span>{selected.predicted ? `${selected.predicted.latitude.toFixed(6)}, ${selected.predicted.longitude.toFixed(6)}` : "unavailable"}</span>
-              <span>Range (P80)</span><span>{selected.uncertainty ? `~${selected.uncertainty.p80Meters.toFixed(0)} m historical error` : "n/a"}</span>
+          <header>
+            <div>
+              <h1>BT+ Nowcast</h1>
+              <p className="subtitle">TRUST → PREDICT → VERIFY</p>
             </div>
-          ) : <p className="note">Click a marker to inspect a bus.</p>}
-          {selected?.uncertainty?.label && <p className="note">{selected.uncertainty.label}</p>}
-        </section>
+            <div className={`badge ${sourceMode === "replay" ? "replay" : "live"}`}>
+              {sourceMode === "replay" ? "REPLAY" : sourceMode === "live" ? "LIVE" : "SIMULATION"}
+              {state?.recording ? " · REC" : ""}
+            </div>
+          </header>
 
-        <section>
-          <h2>Live Validation</h2>
-          {evaluation ? (
-            <>
-              <div className="stat-row"><strong>Evaluated Samples:</strong> {evaluation.samples}</div>
-              <div className="stat-row"><strong>BT Stale Error:</strong> {formatMeters(evaluation.avgBaselineMeters)}</div>
-              <div className="stat-row"><strong>Constant Velocity:</strong> {formatMeters(evaluation.avgConstantMeters)}</div>
-              <div className="stat-row" style={{ color: "#22c55e", fontWeight: "bold" }}><strong>Our Motion-Aware:</strong> {formatMeters(evaluation.avgMotionMeters)}</div>
-              <div className="stat-row"><strong>Win / Tie / Loss:</strong> {evaluation.motion.wins}W / {evaluation.motion.ties}T / {evaluation.motion.losses}L</div>
-              <p className="note">Auto-validates predictions against next ground-truth observation.</p>
-            </>
-          ) : <p className="note">Waiting for paired observations…</p>}
-        </section>
-
-        <section className="model7-validation">
-          <h2>CAS Model 7 Validation</h2>
-          {!model7Validation || !model7Validation.available ? (
-            <p className="note">Waiting for CAS pairs…</p>
-          ) : (
-            <>
-              <div className="stat-row"><strong>Completed CAS Pairs:</strong> {model7Validation.completedPairCount}</div>
-              <div className="stat-row"><strong>BT Stale Error:</strong> {formatMeters(model7Validation.staleMeanGeoErrorMeters)}</div>
-              <div className="stat-row"><strong>Model 1:</strong> {formatMeters(model7Validation.model1MeanGeoErrorMeters)}</div>
-              <div className="stat-row model7-result"><strong>Model 7 Safe:</strong> {formatMeters(model7Validation.model7SafeMeanGeoErrorMeters)}</div>
-              <div className="stat-row"><strong>Improvement vs Model 1:</strong> {formatImprovement(model7Validation.improvementVsModel1MeanGeoErrorMeters)}</div>
-              <div className="stat-row"><strong>Hold / Moving:</strong> {model7Validation.nHold} / {model7Validation.nMoving}</div>
-              {model7Validation.movingOnly?.completedPairCount > 0 && (
-                <div className="moving-only">
-                  <strong>Moving only ({model7Validation.movingOnly.completedPairCount}):</strong>
-                  <span> Model 1 {formatMeters(model7Validation.movingOnly.model1MeanGeoErrorMeters)}</span>
-                  <span> · Model 7 {formatMeters(model7Validation.movingOnly.model7SafeMeanGeoErrorMeters)}</span>
-                  <span> · Δ {formatImprovement(model7Validation.movingOnly.improvementVsModel1MeanGeoErrorMeters)}</span>
-                </div>
-              )}
-            </>
+          {error && (
+            <section>
+              <p className="note">Backend: {error}. Start with BT_RECORD=false.</p>
+            </section>
           )}
-          {model7Validation?.mapUsesModel7Safe ? (
-            <p className="note model7-status">CAS vehicles on the map are using Model 7 Safe.</p>
-          ) : model7Validation ? (
-            <p className="note">Evaluation only: the map is currently using Model 1.</p>
-          ) : null}
-        </section>
 
-        <section>
-          <h2>Uncertainty calibration</h2>
-          {(state?.uncertaintyCalibration || []).map((bucket) => {
-            const label = bucket.maxSeconds === null || !Number.isFinite(bucket.maxSeconds) ? `${bucket.minSeconds}s+` : `${bucket.minSeconds}-${bucket.maxSeconds}s`;
-            return (
-              <div className="stat-row" key={label}>
-                {label}: n={bucket.sampleCount} {bucket.p80Meters != null ? ` · P80 ${bucket.p80Meters.toFixed(0)} m` : " · no samples"}
+          {sourceMode === "replay" && (
+            <ReplayControls replay={state?.replay} stateTimestamp={state?.timestamp} />
+          )}
+
+          <section>
+            <h2>Selected bus</h2>
+            {selected ? (
+              <div className="kv">
+                <span>Bus ID</span>
+                <span>{selected.id}</span>
+                <span>Route</span>
+                <span
+                  style={{
+                    // 1. 保留原本官方的纯正路线颜色（CAS 依然是深黑炭灰色！）
+                    color: getRouteColor(selected.routeId, selected.routeColor),
+                    fontWeight: 900,
+                    fontSize: "1.25rem",
+                    letterSpacing: "0.08em",
+                    // 2. 贴身白色文字描边（给字母笔画外圈包上纯白轮廓）
+                    WebkitTextStroke: selected.routeId?.toUpperCase() === "CAS" ? "1.2px #ffffff" : "0.5px rgba(255, 255, 255, 0.4)",
+                    paintOrder: "stroke fill", // 确保文字内部颜色不被描边吃掉
+                    textShadow: "0 0 10px rgba(255, 255, 255, 0.3)" // 轮廓外微光
+                  }}
+                >
+                  {selected.routeId}
+                </span>
+
+                <span>Data age</span>
+                <span>
+                  {Math.max(
+                    0,
+                    (selected.predictionState
+                      ? (selected.predictionState.initialElapsedSeconds || 0) +
+                        Math.max(0, (Date.now() - (selected.generatedAt || Date.now())) / 1000)
+                      : selected.dataAge || 0)
+                  ).toFixed(1)}{" "}
+                  s
+                </span>
+
+                <span>Freshness</span>
+                <span className={freshnessClass(selected.freshness)}>
+                  {selected.freshness.toUpperCase()}
+                </span>
+
+                <span>Horizon</span>
+                <span>
+                  {Math.max(
+                    0,
+                    (selected.predicted?.predictionHorizonSeconds ??
+                      selected.predictionHorizonSeconds ??
+                      0)
+                  ).toFixed(1)}{" "}
+                  s
+                </span>
+
+                <span>Most likely</span>
+                <span>
+                  {selected.predicted
+                    ? `${selected.predicted.latitude.toFixed(6)}, ${selected.predicted.longitude.toFixed(6)}`
+                    : "unavailable"}
+                </span>
+
+                <span>Range (P80)</span>
+                <span>
+                  {selected.uncertainty
+                    ? `~${selected.uncertainty.p80Meters.toFixed(0)} m historical error`
+                    : "n/a"}
+                </span>
               </div>
-            );
-          })}
-        </section>
+            ) : (
+              <p className="note">Click a marker to inspect a bus.</p>
+            )}
+            {selected?.uncertainty?.label && <p className="note">{selected.uncertainty.label}</p>}
+          </section>
 
-        <section className="legend">
-          <h2>Legend</h2>
-          <p><span className="dot reported" /> Reported (stale BT GPS)</p>
-          <p><span className="dot predicted" /> Predicted nowcast position</p>
-          <p><span className="dot range" /> Uncertainty range (P80)</p>
-        </section>
+          <section>
+            <h2>Live Validation</h2>
+            {evaluation ? (
+              <>
+                <div className="stat-row">
+                  <strong>Evaluated Samples:</strong> {evaluation.samples}
+                </div>
+                <div className="stat-row">
+                  <strong>BT Stale Error:</strong> {formatMeters(evaluation.avgBaselineMeters)}
+                </div>
+                <div className="stat-row">
+                  <strong>Constant Velocity:</strong> {formatMeters(evaluation.avgConstantMeters)}
+                </div>
+                <div className="stat-row" style={{ color: "#22c55e", fontWeight: "bold" }}>
+                  <strong>Our Motion-Aware:</strong> {formatMeters(evaluation.avgMotionMeters)}
+                </div>
+                <div className="stat-row">
+                  <strong>Win / Tie / Loss:</strong> {evaluation.motion.wins}W / {evaluation.motion.ties}T /{" "}
+                  {evaluation.motion.losses}L
+                </div>
+                <p className="note">Auto-validates predictions against next ground-truth observation.</p>
+              </>
+            ) : (
+              <p className="note">Waiting for paired observations…</p>
+            )}
+          </section>
+
+          <section className="model7-validation">
+            <h2>CAS Model 7 Validation</h2>
+            {!model7Validation || !model7Validation.available ? (
+              <p className="note">Waiting for CAS pairs…</p>
+            ) : (
+              <>
+                <div className="stat-row">
+                  <strong>Completed CAS Pairs:</strong> {model7Validation.completedPairCount}
+                </div>
+                <div className="stat-row">
+                  <strong>BT Stale Error:</strong> {formatMeters(model7Validation.staleMeanGeoErrorMeters)}
+                </div>
+                <div className="stat-row">
+                  <strong>Model 1:</strong> {formatMeters(model7Validation.model1MeanGeoErrorMeters)}
+                </div>
+                <div className="stat-row model7-result">
+                  <strong>Model 7 Safe:</strong> {formatMeters(model7Validation.model7SafeMeanGeoErrorMeters)}
+                </div>
+                <div className="stat-row">
+                  <strong>Improvement vs Model 1:</strong>{" "}
+                  {formatImprovement(model7Validation.improvementVsModel1MeanGeoErrorMeters)}
+                </div>
+                <div className="stat-row">
+                  <strong>Hold / Moving:</strong> {model7Validation.nHold} / {model7Validation.nMoving}
+                </div>
+                {model7Validation.movingOnly?.completedPairCount > 0 && (
+                  <div className="moving-only">
+                    <strong>Moving only ({model7Validation.movingOnly.completedPairCount}):</strong>
+                    <span> Model 1 {formatMeters(model7Validation.movingOnly.model1MeanGeoErrorMeters)}</span>
+                    <span> · Model 7 {formatMeters(model7Validation.movingOnly.model7SafeMeanGeoErrorMeters)}</span>
+                    <span> · Δ {formatImprovement(model7Validation.movingOnly.improvementVsModel1MeanGeoErrorMeters)}</span>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+
+          <section>
+            <h2>Uncertainty calibration</h2>
+            {(state?.uncertaintyCalibration || []).map((bucket) => {
+              const label =
+                bucket.maxSeconds === null || !Number.isFinite(bucket.maxSeconds)
+                  ? `${bucket.minSeconds}s+`
+                  : `${bucket.minSeconds}-${bucket.maxSeconds}s`;
+              return (
+                <div className="stat-row" key={label}>
+                  {label}: n={bucket.sampleCount}{" "}
+                  {bucket.p80Meters != null ? ` · P80 ${bucket.p80Meters.toFixed(0)} m` : " · no samples"}
+                </div>
+              );
+            })}
+          </section>
+
+          <section className="legend">
+            <h2>Legend</h2>
+            <p>
+              <span className="dot reported" /> Reported (stale BT GPS)
+            </p>
+            <p>
+              <span className="dot predicted" /> Predicted nowcast position
+            </p>
+            <p>
+              <span className="dot range" /> Uncertainty range (P80)
+            </p>
+          </section>
         </div>
       </aside>
     </div>
