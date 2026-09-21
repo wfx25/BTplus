@@ -94,30 +94,172 @@ export function rangeCoordinates(coordinates, progressKm, p80Meters, routeLength
   return samples.length >= 2 ? samples : null;
 }
 
-export function visualPredictedPosition(bus, routeCoordinates, nowMs = Date.now()) {
-  const ps = bus.predictionState;
-  if (!ps) {
-    return bus.predicted
-      ? { latitude: bus.predicted.latitude, longitude: bus.predicted.longitude }
-      : null;
+function backendPredicted(bus) {
+  const latitude = bus.predicted?.latitude;
+  const longitude = bus.predicted?.longitude;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
   }
-  if (ps.modelType !== "route_constant_velocity") {
-    return bus.predicted
-      ? { latitude: bus.predicted.latitude, longitude: bus.predicted.longitude }
-      : null;
-  }
-  if (ps.modelMode === "hold") {
-    return {
-      latitude: bus.reported.latitude,
-      longitude: bus.reported.longitude
-    };
-  }
-  const progressKm = progressFromState(ps, bus.generatedAt, nowMs);
-  const along = pointAlongCoordinates(routeCoordinates, progressKm);
-  if (along) {
-    return along;
-  }
-  return bus.predicted
-    ? { latitude: bus.predicted.latitude, longitude: bus.predicted.longitude }
+  return { latitude, longitude };
+}
+
+export function usableRouteCoordinates(routeCoordinates) {
+  return Array.isArray(routeCoordinates) && routeCoordinates.length >= 2
+    ? routeCoordinates
     : null;
+}
+
+function isHold(bus) {
+  const mode = bus.predictionState?.modelMode || bus.predicted?.modelMode;
+  if (mode === "hold") return true;
+  const speed =
+    bus.predictionState?.speedMetersPerSecond ??
+    bus.reported?.speed ??
+    bus.speed;
+  return Number.isFinite(speed) && speed <= 1;
+}
+
+function positionsOverlap(a, b, meters = 12) {
+  if (!a || !b) return false;
+  if (
+    !Number.isFinite(a.latitude) ||
+    !Number.isFinite(a.longitude) ||
+    !Number.isFinite(b.latitude) ||
+    !Number.isFinite(b.longitude)
+  ) {
+    return false;
+  }
+  return haversineKm([a.longitude, a.latitude], [b.longitude, b.latitude]) * 1000 < meters;
+}
+
+export function nearestProgressKm(coordinates, longitude, latitude, maxDistanceMeters = 250) {
+  const coords = usableRouteCoordinates(coordinates);
+  if (!coords || !Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+    return null;
+  }
+
+  const busPoint = [longitude, latitude];
+  let best = null;
+  let traveled = 0;
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    const segmentKm = haversineKm(start, end);
+    if (segmentKm < 1e-6) {
+      continue;
+    }
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const spanSq = dx * dx + dy * dy;
+    let t = ((busPoint[0] - start[0]) * dx + (busPoint[1] - start[1]) * dy) / spanSq;
+    t = Math.max(0, Math.min(1, t));
+    const projected = [start[0] + dx * t, start[1] + dy * t];
+    const distanceMeters = haversineKm(busPoint, projected) * 1000;
+    if (best == null || distanceMeters < best.distanceMeters) {
+      best = {
+        progressKm: traveled + t * segmentKm,
+        distanceMeters
+      };
+    }
+    traveled += segmentKm;
+  }
+
+  if (!best || best.distanceMeters > maxDistanceMeters) {
+    return null;
+  }
+  return best.progressKm;
+}
+
+export function destinationPoint(latitude, longitude, bearingDeg, distanceMeters) {
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    !Number.isFinite(bearingDeg) ||
+    !Number.isFinite(distanceMeters)
+  ) {
+    return null;
+  }
+  const radius = 6371000;
+  const angularDistance = distanceMeters / radius;
+  const bearing = (bearingDeg * Math.PI) / 180;
+  const lat1 = (latitude * Math.PI) / 180;
+  const lon1 = (longitude * Math.PI) / 180;
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDistance) +
+      Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
+  );
+  const lon2 =
+    lon1 +
+    Math.atan2(
+      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
+      Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+    );
+  return {
+    latitude: (lat2 * 180) / Math.PI,
+    longitude: ((lon2 * 180) / Math.PI + 540) % 360 - 180
+  };
+}
+
+export function deadReckonedPosition(bus, nowMs = Date.now()) {
+  const reported = bus.reported;
+  if (!reported) return null;
+  const speed =
+    bus.predictionState?.speedMetersPerSecond ?? reported.speed ?? bus.speed;
+  const heading = reported.direction ?? bus.direction;
+  if (!Number.isFinite(speed) || speed <= 1 || !Number.isFinite(heading)) {
+    return null;
+  }
+  const elapsed = bus.predictionState
+    ? elapsedSeconds(bus.predictionState, bus.generatedAt, nowMs)
+    : Math.max(0, reported.dataAge ?? bus.dataAge ?? 0);
+  if (!Number.isFinite(elapsed) || elapsed <= 0) {
+    return null;
+  }
+  return destinationPoint(reported.latitude, reported.longitude, heading, speed * elapsed);
+}
+
+function alongRoutePosition(bus, routeCoordinates, nowMs) {
+  const coords = usableRouteCoordinates(routeCoordinates);
+  if (!coords) return null;
+
+  const ps = bus.predictionState;
+  let progressKm = progressFromState(ps, bus.generatedAt, nowMs);
+  if (progressKm == null && bus.reported) {
+    const snapped = nearestProgressKm(
+      coords,
+      bus.reported.longitude,
+      bus.reported.latitude
+    );
+    if (snapped != null) {
+      const speed = ps?.speedMetersPerSecond ?? bus.reported.speed ?? bus.speed ?? 0;
+      const elapsed = ps ? elapsedSeconds(ps, bus.generatedAt, nowMs) : 0;
+      progressKm = normalizeProgressKm(
+        snapped + (Number.isFinite(speed) ? (speed * elapsed) / 1000 : 0),
+        ps?.routeLengthKm,
+        ps?.loop
+      );
+    }
+  }
+  return pointAlongCoordinates(coords, progressKm);
+}
+
+function visiblePrediction(bus, position) {
+  if (!position) return null;
+  if (bus.reported && positionsOverlap(position, bus.reported)) {
+    return null;
+  }
+  return position;
+}
+
+export function visualPredictedPosition(bus, routeCoordinates, nowMs = Date.now()) {
+  if (isHold(bus)) {
+    return null;
+  }
+
+  return (
+    visiblePrediction(bus, alongRoutePosition(bus, routeCoordinates, nowMs)) ||
+    visiblePrediction(bus, backendPredicted(bus)) ||
+    visiblePrediction(bus, deadReckonedPosition(bus, nowMs))
+  );
 }

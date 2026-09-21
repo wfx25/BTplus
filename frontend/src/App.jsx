@@ -5,6 +5,7 @@ import "./App.css";
 import {
   progressFromState,
   rangeCoordinates,
+  usableRouteCoordinates,
   visualPredictedPosition
 } from "./predictionPlayback.js";
 import ReplayControls from "./components/ReplayControls.jsx";
@@ -142,6 +143,12 @@ function freshnessClass(value) {
 }
 
 function lerp(a, b, t) { return a + (b - a) * t; }
+
+function resolveCachedRoute(cached) {
+  if (cached && typeof cached.then === "function") return null;
+  return usableRouteCoordinates(cached);
+}
+
 function formatMeters(value) { return value == null || Number.isNaN(value) ? "n/a" : `${value.toFixed(1)} m`; }
 function formatImprovement(value) {
   if (value == null || Number.isNaN(value)) return "n/a";
@@ -188,7 +195,7 @@ export default function App() {
     useRouteLineColorRef.current = checked;
     if (selectedBusIdRef.current && stateRef.current) {
       const bus = stateRef.current.buses.find((b) => b.id === selectedBusIdRef.current);
-      if (bus) loadRoute(bus.gtfsTripId, true);
+      if (bus) loadRoute(bus.gtfsTripId, true, bus.routeId, bus.reported);
     }
   }
 
@@ -217,7 +224,7 @@ export default function App() {
     routeAnimatedRef.current = checked;
     if (selectedBusIdRef.current && stateRef.current) {
       const bus = stateRef.current.buses.find((b) => b.id === selectedBusIdRef.current);
-      if (bus) loadRoute(bus.gtfsTripId, true);
+      if (bus) loadRoute(bus.gtfsTripId, true, bus.routeId, bus.reported);
     }
   }
 
@@ -228,7 +235,7 @@ export default function App() {
     isTrackingRef.current = true;
     setIsTrackingUI(true);
 
-    loadRoute(bus.gtfsTripId);
+    loadRoute(bus.gtfsTripId, false, bus.routeId, bus.reported);
     const map = mapRef.current;
     const target = bus.predicted || bus.reported;
     if (map && target) {
@@ -246,29 +253,51 @@ export default function App() {
     layersRef.current?.route?.clearLayers();
   }
 
-  function cacheRoute(tripId) {
-    if (!tripId) return Promise.resolve(null);
-    if (routeCacheRef.current.has(tripId)) return Promise.resolve(routeCacheRef.current.get(tripId));
-    return fetch(apiUrl(`/api/route?tripId=${encodeURIComponent(tripId)}`))
+  function cacheRoute(tripId, routeId, reported) {
+    if (!tripId && !routeId) return Promise.resolve(null);
+    const cacheKey = tripId || `route:${routeId}`;
+    const cached = routeCacheRef.current.get(cacheKey);
+    if (cached !== undefined) {
+      if (cached && typeof cached.then === "function") return cached;
+      return Promise.resolve(resolveCachedRoute(cached));
+    }
+
+    const params = new URLSearchParams();
+    if (tripId) params.set("tripId", tripId);
+    if (routeId) params.set("routeId", routeId);
+    if (Number.isFinite(reported?.latitude)) params.set("lat", String(reported.latitude));
+    if (Number.isFinite(reported?.longitude)) params.set("lon", String(reported.longitude));
+
+    const request = fetch(apiUrl(`/api/route?${params.toString()}`))
       .then((res) => { if (!res.ok) throw new Error(); return res.json(); })
       .then((payload) => {
-        const coords = payload.coordinates || null;
-        routeCacheRef.current.set(tripId, coords);
-        return coords;
+        const coords = usableRouteCoordinates(payload.coordinates);
+        const resolved =
+          coords || (tripId === "trip_ucb_mock" ? MOCK_UCB_COORDINATES : null);
+        routeCacheRef.current.set(cacheKey, resolved);
+        return resolved;
       })
       .catch(() => {
-        const fallback = MOCK_UCB_COORDINATES;
-        routeCacheRef.current.set(tripId, fallback);
-        return fallback;
+        const resolved = tripId === "trip_ucb_mock" ? MOCK_UCB_COORDINATES : null;
+        if (resolved) {
+          routeCacheRef.current.set(cacheKey, resolved);
+        } else {
+          routeCacheRef.current.delete(cacheKey);
+        }
+        return resolved;
       });
+
+    routeCacheRef.current.set(cacheKey, request);
+    return request;
   }
 
-  function loadRoute(tripId, forceRedraw = false) {
-    if (!tripId) return;
-    if (!forceRedraw && tripId === loadedTripIdRef.current) return;
+  function loadRoute(tripId, forceRedraw = false, routeId, reported) {
+    if (!tripId && !routeId) return;
+    const cacheKey = tripId || `route:${routeId}`;
+    if (!forceRedraw && cacheKey === loadedTripIdRef.current) return;
 
-    cacheRoute(tripId).then((coordinates) => {
-      loadedTripIdRef.current = tripId;
+    cacheRoute(tripId, routeId, reported).then((coordinates) => {
+      loadedTripIdRef.current = cacheKey;
       const routeLayer = layersRef.current?.route;
       if (!routeLayer) return;
       routeLayer.clearLayers();
@@ -380,7 +409,7 @@ export default function App() {
 
         for (const bus of buses) {
           seen.add(bus.id);
-          const routeCoordinates = routeCacheRef.current.get(bus.gtfsTripId);
+          const routeCoordinates = resolveCachedRoute(routeCacheRef.current.get(bus.gtfsTripId));
           const predictionVisible = predictionVisibleFor(bus.id);
           let predicted = predictionVisible
             ? visualPredictedPosition(bus, routeCoordinates, animationNow)
@@ -496,8 +525,8 @@ export default function App() {
           }
 
           const ps = bus.predictionState;
-          const routeCoordinates = routeCacheRef.current.get(bus.gtfsTripId);
-          if (!bus.uncertainty || !routeCoordinates || !ps) {
+          const routeCoordinates = resolveCachedRoute(routeCacheRef.current.get(bus.gtfsTripId));
+          if (!bus.uncertainty || !routeCoordinates || !ps || ps.modelMode === "hold") {
             if (entry.rangeLine) {
               layers.range.removeLayer(entry.rangeLine);
               entry.rangeLine = null;
@@ -568,7 +597,9 @@ export default function App() {
       stateRef.current = next;
       setState(next);
       setError(null);
-      for (const bus of next.buses || []) cacheRoute(bus.gtfsTripId);
+      for (const bus of next.buses || []) {
+        cacheRoute(bus.gtfsTripId, bus.routeId, bus.reported);
+      }
     }
 
     fetch(apiUrl("/api/state"))

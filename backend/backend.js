@@ -521,13 +521,15 @@ function getTravelDirection(previousBus, currentBus) {
     const previousProgress = getRouteProgress(
         previousBus.gtfsTripId,
         previousBus.latitude,
-        previousBus.longitude
+        previousBus.longitude,
+        previousBus.routeId
     );
 
     const currentProgress = getRouteProgress(
         currentBus.gtfsTripId,
         currentBus.latitude,
-        currentBus.longitude
+        currentBus.longitude,
+        currentBus.routeId
     );
 
     if (!previousProgress || !currentProgress) {
@@ -567,7 +569,8 @@ function predictBusAfterSeconds(bus, seconds) {
             bus.gtfsTripId,
             bus.latitude,
             bus.longitude,
-            bus.direction
+            bus.direction,
+            bus.routeId
         );
 
     if (!currentProgress) {
@@ -588,7 +591,8 @@ function predictBusAfterSeconds(bus, seconds) {
     const predictedPoint =
         getRoutePoint(
             bus.gtfsTripId,
-            predictedProgressKm
+            predictedProgressKm,
+            bus.routeId
         );
 
     if (!predictedPoint) {
@@ -836,7 +840,7 @@ function evaluatePrediction(previous, current) {
             model7Result ? model7Result.fallbackUsed : true,
         model7FallbackReason:
             model7Result ? model7Result.fallbackReason : "unavailable",
-        model7Eligible: isModel7EligibleTrip(previous.gtfsTripId),
+        model7Eligible: isModel7EligibleTrip(previous.gtfsTripId, previous.routeId),
         model7HgbApplied: model7Result ? model7Result.hgbApplied === true : false,
         model7AppliedCorrectionMeters:
             model7Result ? model7Result.appliedCorrectionMeters : 0,
@@ -956,7 +960,8 @@ function getP80ForHorizon(deltaTimeSeconds) {
 function buildRouteAlignedUncertainty(
     gtfsTripId,
     progressKm,
-    p80Meters
+    p80Meters,
+    routeId
 ) {
     if (
         progressKm === null ||
@@ -975,7 +980,8 @@ function buildRouteAlignedUncertainty(
     for (let p = startKm; p <= endKm + 1e-9; p += stepKm) {
         const point = getRoutePoint(
             gtfsTripId,
-            p
+            p,
+            routeId
         );
         if (point) {
             samples.push([point.longitude, point.latitude]);
@@ -1071,7 +1077,8 @@ function buildBusPayload(bus) {
             bus.gtfsTripId,
             bus.latitude,
             bus.longitude,
-            bus.direction
+            bus.direction,
+            bus.routeId
         );
 
     const progressKm =
@@ -1085,7 +1092,8 @@ function buildBusPayload(bus) {
             ? buildRouteAlignedUncertainty(
                 bus.gtfsTripId,
                 progressKm,
-                p80Meters
+                p80Meters,
+                bus.routeId
             )
             : null;
 
@@ -1100,7 +1108,8 @@ function buildBusPayload(bus) {
             ? getUpcomingTurnInfo(
                 bus.gtfsTripId,
                 progressKm,
-                250
+                250,
+                bus.routeId
             )
             : null;
 
@@ -1142,8 +1151,13 @@ function buildBusPayload(bus) {
             startTimestamp: Date.now(),
             initialElapsedSeconds: dataAgeSeconds,
             speedMetersPerSecond: bus.speed,
-            routeLengthKm: getRouteLengthKm(bus.gtfsTripId),
-            loop: isLoopTrip(bus.gtfsTripId),
+            routeLengthKm: getRouteLengthKm(
+                bus.gtfsTripId,
+                bus.routeId,
+                bus.latitude,
+                bus.longitude
+            ),
+            loop: isLoopTrip(bus.gtfsTripId, bus.routeId),
             mlModelType: produced.mlModelType,
             baseModel: "route_constant_velocity",
             rawMlResidualMeters: produced.rawMlResidualMeters,
@@ -1596,13 +1610,19 @@ function startHttpServer() {
 
         if (requestUrl.pathname === "/api/route") {
             const tripId = requestUrl.searchParams.get("tripId");
-            const coordinates = tripId
-                ? getRouteGeometry(tripId)
-                : null;
+            const routeId = requestUrl.searchParams.get("routeId");
+            const lat = Number(requestUrl.searchParams.get("lat"));
+            const lon = Number(requestUrl.searchParams.get("lon"));
+            const coordinates = getRouteGeometry(
+                tripId,
+                routeId,
+                Number.isFinite(lat) ? lat : null,
+                Number.isFinite(lon) ? lon : null
+            );
             sendJson(res, 200, {
                 gtfsTripId: tripId,
                 coordinates,
-                ...getRouteStyle(tripId)
+                ...getRouteStyle(tripId, routeId)
             });
             return;
         }

@@ -85,7 +85,7 @@ function createModel7Runtime() {
             return fallback("invalid_trip", null);
         }
 
-        if (!isModel7EligibleTrip(bus.gtfsTripId)) {
+        if (!isModel7EligibleTrip(bus.gtfsTripId, bus.routeId)) {
             return fallback("out_of_training_scope", null);
         }
 
@@ -176,7 +176,8 @@ function createModel7Runtime() {
             current.progressKm + model7DisplacementMeters / 1000;
         const predictedPoint = getRoutePoint(
             bus.gtfsTripId,
-            predictedProgressKm
+            predictedProgressKm,
+            bus.routeId
         );
         if (!predictedPoint) {
             return fallback("route_point_unavailable", null);

@@ -3,7 +3,7 @@ node_modules/
 .env
 
 # Real BT recordings
-recordings/*.jsonl
+recordings/*
 
 # Logs
 *.log

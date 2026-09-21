@@ -53,11 +53,41 @@ if (!routesText) {
 // =====================================================
 const tripToShape = new Map();
 const tripToRouteId = new Map();
+const tripShapeAlias = new Map();
+const shapesByRouteId = new Map();
+const shapeCountByRoute = new Map();
+const primaryShapeByRoute = new Map();
 const MODEL7_ELIGIBLE_GTFS_ROUTE_ID = "CAS";
 
 for (const trip of trips) {
-    tripToShape.set(trip.trip_id, trip.shape_id);
+    const shapeId = trip.shape_id && String(trip.shape_id).trim();
+    if (shapeId) {
+        tripToShape.set(trip.trip_id, shapeId);
+    }
     tripToRouteId.set(trip.trip_id, trip.route_id);
+    if (shapeId && trip.route_id) {
+        if (!shapesByRouteId.has(trip.route_id)) {
+            shapesByRouteId.set(trip.route_id, new Set());
+            shapeCountByRoute.set(trip.route_id, new Map());
+        }
+        shapesByRouteId.get(trip.route_id).add(shapeId);
+        const counts = shapeCountByRoute.get(trip.route_id);
+        counts.set(shapeId, (counts.get(shapeId) || 0) + 1);
+    }
+}
+
+for (const [routeId, counts] of shapeCountByRoute) {
+    let bestShape = null;
+    let bestCount = -1;
+    for (const [shapeId, count] of counts) {
+        if (count > bestCount) {
+            bestShape = shapeId;
+            bestCount = count;
+        }
+    }
+    if (bestShape) {
+        primaryShapeByRoute.set(routeId, bestShape);
+    }
 }
 
 function normalizeGtfsHex(value) {
@@ -223,16 +253,77 @@ for (const [shapeId, points] of shapeGroups) {
     );
 }
 
+function pickShapeForRoute(routeId, latitude, longitude) {
+    const shapeIds = shapesByRouteId.get(routeId);
+    if (!shapeIds || shapeIds.size === 0) {
+        return null;
+    }
+    if (
+        Number.isFinite(latitude) &&
+        Number.isFinite(longitude)
+    ) {
+        const busPoint = turf.point([longitude, latitude]);
+        let best = null;
+        for (const shapeId of shapeIds) {
+            const line = shapeToLine.get(shapeId);
+            if (!line) continue;
+            const snapped = turf.nearestPointOnLine(line, busPoint);
+            const dist = snapped.properties.pointDistance;
+            if (!best || dist < best.dist) {
+                best = { shapeId, dist };
+            }
+        }
+        if (best) {
+            return best.shapeId;
+        }
+    }
+    return primaryShapeByRoute.get(routeId) || [...shapeIds][0];
+}
+
+function resolveShapeId(
+    gtfsTripId,
+    routeId,
+    latitude,
+    longitude
+) {
+    if (gtfsTripId) {
+        const mapped = tripToShape.get(gtfsTripId);
+        if (mapped) {
+            return mapped;
+        }
+        const aliased = tripShapeAlias.get(gtfsTripId);
+        if (aliased) {
+            return aliased;
+        }
+    }
+
+    const rid = routeId || (gtfsTripId && tripToRouteId.get(gtfsTripId)) || null;
+    if (!rid) {
+        return null;
+    }
+
+    const shapeId = pickShapeForRoute(rid, latitude, longitude);
+    if (shapeId && gtfsTripId) {
+        tripShapeAlias.set(gtfsTripId, shapeId);
+    }
+    return shapeId;
+}
+
 // =====================================================
 // 6. Basic route progress
 // =====================================================
 function getRouteProgress(
     gtfsTripId,
     latitude,
-    longitude
+    longitude,
+    routeId
 ) {
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+    const shapeId = resolveShapeId(
+        gtfsTripId,
+        routeId,
+        latitude,
+        longitude
+    );
 
     if (!shapeId) {
         return null;
@@ -291,10 +382,15 @@ function getDirectedRouteProgress(
     gtfsTripId,
     latitude,
     longitude,
-    direction
+    direction,
+    routeId
 ) {
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+    const shapeId = resolveShapeId(
+        gtfsTripId,
+        routeId,
+        latitude,
+        longitude
+    );
 
     if (!shapeId) return null;
 
@@ -408,10 +504,10 @@ function getDirectedRouteProgress(
 // =====================================================
 function getRoutePoint(
     gtfsTripId,
-    progressKm
+    progressKm,
+    routeId
 ) {
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+    const shapeId = resolveShapeId(gtfsTripId, routeId);
 
     if (!shapeId) return null;
 
@@ -526,8 +622,7 @@ function getNextStopInfo(
         return null;
     }
 
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+    const shapeId = resolveShapeId(gtfsTripId);
 
     if (!shapeId) {
         return null;
@@ -666,8 +761,7 @@ function getPreviousStopInfo(
         return null;
     }
 
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+    const shapeId = resolveShapeId(gtfsTripId);
 
     if (!shapeId) {
         return null;
@@ -797,8 +891,7 @@ function getTripStops(
         return [];
     }
 
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+    const shapeId = resolveShapeId(gtfsTripId);
 
     if (!shapeId) {
         return [];
@@ -854,7 +947,8 @@ function getTripStops(
 function getUpcomingTurnInfo(
     gtfsTripId,
     currentProgressKm,
-    lookaheadMeters
+    lookaheadMeters,
+    routeId
 ) {
     if (
         currentProgressKm === null ||
@@ -868,8 +962,7 @@ function getUpcomingTurnInfo(
             ? lookaheadMeters
             : 250;
 
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+    const shapeId = resolveShapeId(gtfsTripId, routeId);
 
     if (!shapeId) return null;
 
@@ -962,9 +1055,13 @@ function getUpcomingTurnInfo(
     return null;
 }
 
-function getRouteGeometry(gtfsTripId) {
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+function getRouteGeometry(gtfsTripId, routeId, latitude, longitude) {
+    const shapeId = resolveShapeId(
+        gtfsTripId,
+        routeId,
+        latitude,
+        longitude
+    );
 
     if (!shapeId) return null;
 
@@ -976,33 +1073,36 @@ function getRouteGeometry(gtfsTripId) {
     return routeLine.geometry.coordinates;
 }
 
-function isLoopTrip(gtfsTripId) {
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+function isLoopTrip(gtfsTripId, routeId) {
+    const shapeId = resolveShapeId(gtfsTripId, routeId);
 
     if (!shapeId) return false;
 
     return shapeIsLoop.get(shapeId) === true;
 }
 
-function getRouteLengthKm(gtfsTripId) {
-    const shapeId =
-        tripToShape.get(gtfsTripId);
+function getRouteLengthKm(gtfsTripId, routeId, latitude, longitude) {
+    const shapeId = resolveShapeId(
+        gtfsTripId,
+        routeId,
+        latitude,
+        longitude
+    );
 
     if (!shapeId) return null;
 
     return shapeRouteLengthsKm.get(shapeId) || null;
 }
 
-function getGtfsRouteId(gtfsTripId) {
-    if (!gtfsTripId) {
-        return null;
+function getGtfsRouteId(gtfsTripId, routeId) {
+    if (gtfsTripId && tripToRouteId.has(gtfsTripId)) {
+        return tripToRouteId.get(gtfsTripId);
     }
-    return tripToRouteId.get(gtfsTripId) || null;
+    return routeId || null;
 }
 
-function isModel7EligibleTrip(gtfsTripId) {
-    return getGtfsRouteId(gtfsTripId) === MODEL7_ELIGIBLE_GTFS_ROUTE_ID;
+function isModel7EligibleTrip(gtfsTripId, routeId) {
+    return getGtfsRouteId(gtfsTripId, routeId) === MODEL7_ELIGIBLE_GTFS_ROUTE_ID;
 }
 
 function getRouteStyle(gtfsTripId, fallbackRouteId) {

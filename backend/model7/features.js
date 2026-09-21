@@ -95,13 +95,19 @@ function buildEnrichedObservation(bus) {
         bus.gtfsTripId,
         bus.latitude,
         bus.longitude,
-        bus.direction
+        bus.direction,
+        bus.routeId
     );
     if (!directed || !Number.isFinite(directed.progressKm)) {
         return null;
     }
 
-    const routeLengthKm = getRouteLengthKm(bus.gtfsTripId);
+    const routeLengthKm = getRouteLengthKm(
+        bus.gtfsTripId,
+        bus.routeId,
+        bus.latitude,
+        bus.longitude
+    );
     if (!(routeLengthKm > 0)) {
         return null;
     }
@@ -117,7 +123,7 @@ function buildEnrichedObservation(bus) {
         isBusAtStop: bus.isBusAtStop === true,
         progressKm: directed.progressKm,
         routeLengthKm,
-        loop: isLoopTrip(bus.gtfsTripId)
+        loop: isLoopTrip(bus.gtfsTripId, bus.routeId)
     };
 }
 
